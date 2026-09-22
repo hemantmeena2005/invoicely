@@ -1,11 +1,29 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter, useParams } from 'next/navigation'
+import { useRouter, useParams, useSearchParams } from 'next/navigation'
 import DashboardLayout from '@/components/DashboardLayout'
-import { ArrowLeftIcon, DocumentArrowDownIcon, CreditCardIcon, PencilIcon, EnvelopeIcon, ClockIcon } from '@heroicons/react/24/outline'
+import { 
+  ArrowLeftIcon, 
+  ArrowDownTrayIcon, 
+  CreditCardIcon, 
+  PencilIcon, 
+  EnvelopeIcon, 
+  ClockIcon,
+  CheckCircleIcon,
+  PaperAirplaneIcon,
+  ArrowPathIcon,
+  DocumentTextIcon,
+  BuildingOffice2Icon,
+  SparklesIcon,
+  QrCodeIcon,
+  LinkIcon,
+  DocumentDuplicateIcon,
+} from '@heroicons/react/24/outline'
 import Link from 'next/link'
-import { format } from 'date-fns'
+import { StatusBadge } from '@/components/ui/Badge'
+import { Skeleton } from '@/components/ui/Skeleton'
+import UPIPaymentModal from '@/components/UPIPaymentModal'
 
 interface Invoice {
   _id: string
@@ -52,17 +70,63 @@ interface Invoice {
 export default function InvoiceViewPage() {
   const [invoice, setInvoice] = useState<Invoice | null>(null)
   const [loading, setLoading] = useState(true)
+  const [downloading, setDownloading] = useState(false)
   const [paymentLoading, setPaymentLoading] = useState(false)
   const [emailLoading, setEmailLoading] = useState(false)
   const [emailStatus, setEmailStatus] = useState<any>(null)
+  const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null)
+  const [paymentSuccessCelebration, setPaymentSuccessCelebration] = useState(false)
+  const [isUpiModalOpen, setIsUpiModalOpen] = useState(false)
+  const [userProfile, setUserProfile] = useState<{ upi_id?: string; upi_name?: string; upi_qr_code?: string; name?: string } | null>(null)
+  const [copiedLink, setCopiedLink] = useState(false)
   const router = useRouter()
   const params = useParams()
+  const searchParams = useSearchParams()
   const invoiceId = params.id as string
 
   useEffect(() => {
     fetchInvoice()
     fetchEmailStatus()
+    fetchProfile()
   }, [invoiceId])
+
+  const handleCopyPaymentLink = () => {
+    const origin = window.location.origin
+    const payUrl = `${origin}/pay/${invoiceId}`
+    navigator.clipboard.writeText(payUrl)
+    setCopiedLink(true)
+    setFeedbackMessage(`Copied payment link: ${payUrl}`)
+    setTimeout(() => {
+      setCopiedLink(false)
+      setFeedbackMessage(null)
+    }, 3000)
+  }
+
+  const fetchProfile = async () => {
+    try {
+      const res = await fetch('/api/profile')
+      if (res.ok) {
+        const data = await res.json()
+        setUserProfile(data.user)
+      }
+    } catch (e) {
+      console.error('Failed to load profile for UPI:', e)
+    }
+  }
+
+  useEffect(() => {
+    if (searchParams.get('success') === 'true') {
+      setPaymentSuccessCelebration(true)
+      // Auto update status to paid in database
+      fetch(`/api/invoices/${invoiceId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'paid' }),
+      }).then(() => {
+        fetchInvoice()
+      })
+    }
+  }, [searchParams, invoiceId])
 
   const fetchInvoice = async () => {
     try {
@@ -94,6 +158,7 @@ export default function InvoiceViewPage() {
   }
 
   const handleDownloadPDF = async () => {
+    setDownloading(true)
     try {
       const response = await fetch(`/api/invoices/${invoiceId}/pdf`)
       if (response.ok) {
@@ -101,7 +166,7 @@ export default function InvoiceViewPage() {
         const url = window.URL.createObjectURL(blob)
         const a = document.createElement('a')
         a.href = url
-        a.download = `invoice-${invoice?.invoiceNumber}.pdf`
+        a.download = `invoice-${invoice?.invoiceNumber || invoiceId}.pdf`
         document.body.appendChild(a)
         a.click()
         window.URL.revokeObjectURL(url)
@@ -109,36 +174,33 @@ export default function InvoiceViewPage() {
       }
     } catch (error) {
       console.error('Error downloading PDF:', error)
+    } finally {
+      setDownloading(false)
     }
   }
 
-  const handlePayment = async () => {
-    setPaymentLoading(true)
+  const handleToggleStatus = async (newStatus: 'paid' | 'draft' | 'sent') => {
+    setFeedbackMessage(null)
     try {
-      const response = await fetch('/api/payments/create-checkout', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ invoiceId }),
+      const response = await fetch(`/api/invoices/${invoiceId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus }),
       })
-
       if (response.ok) {
-        const { url } = await response.json()
-        window.location.href = url
+        setFeedbackMessage(`Invoice status updated to ${newStatus}`)
+        fetchInvoice()
       } else {
-        alert('Failed to create payment session')
+        setFeedbackMessage('Failed to update invoice status')
       }
     } catch (error) {
-      console.error('Error creating payment:', error)
-      alert('An error occurred while processing payment')
-    } finally {
-      setPaymentLoading(false)
+      setFeedbackMessage('An error occurred updating status')
     }
   }
 
   const handleSendEmail = async (emailType: 'invoice' | 'reminder') => {
     setEmailLoading(true)
+    setFeedbackMessage(null)
     try {
       const response = await fetch(`/api/invoices/${invoiceId}/send-email`, {
         method: 'POST',
@@ -150,393 +212,369 @@ export default function InvoiceViewPage() {
 
       if (response.ok) {
         const result = await response.json()
-        alert(result.message)
-        fetchInvoice() // Refresh invoice data
-        fetchEmailStatus() // Refresh email status
+        setFeedbackMessage(`Success: ${result.message || 'Email sent successfully'}`)
+        fetchInvoice()
+        fetchEmailStatus()
       } else {
         const error = await response.json()
-        alert(`Failed to send email: ${error.error}`)
+        setFeedbackMessage(`Error: ${error.error || 'Failed to send email'}`)
       }
     } catch (error) {
-      console.error('Error sending email:', error)
-      alert('An error occurred while sending email')
+      setFeedbackMessage('An error occurred while sending email.')
     } finally {
       setEmailLoading(false)
-    }
-  }
-
-  const handleRefresh = () => {
-    fetchInvoice()
-    fetchEmailStatus()
-  }
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'paid':
-        return 'bg-green-100 text-green-800'
-      case 'sent':
-        return 'bg-blue-100 text-blue-800'
-      case 'draft':
-        return 'bg-gray-100 text-gray-800'
-      case 'overdue':
-        return 'bg-red-100 text-red-800'
-      default:
-        return 'bg-gray-100 text-gray-800'
-    }
-  }
-
-  const getEmailStatusColor = (status: string) => {
-    switch (status) {
-      case 'delivered':
-        return 'bg-green-100 text-green-800'
-      case 'sent':
-        return 'bg-blue-100 text-blue-800'
-      case 'failed':
-        return 'bg-red-100 text-red-800'
-      default:
-        return 'bg-gray-100 text-gray-800'
     }
   }
 
   if (loading) {
     return (
       <DashboardLayout>
-        <div className="flex items-center justify-center h-64">
-          <div className="text-gray-500">Loading invoice...</div>
+        <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
+          <Skeleton className="h-6 w-32" />
+          <div className="card p-8 space-y-6">
+            <div className="flex justify-between">
+              <Skeleton className="h-8 w-48" />
+              <Skeleton className="h-8 w-24 rounded-full" />
+            </div>
+            <Skeleton className="h-32 w-full" />
+            <Skeleton className="h-48 w-full" />
+          </div>
         </div>
       </DashboardLayout>
     )
   }
 
-  if (!invoice) {
-    return (
-      <DashboardLayout>
-        <div className="text-center py-12">
-          <p className="text-gray-500">Invoice not found</p>
-          <Link href="/invoices" className="btn-primary mt-4">
-            Back to Invoices
-          </Link>
-        </div>
-      </DashboardLayout>
-    )
-  }
-
-  const hasClientEmail = invoice.clientId.email && invoice.clientId.email.trim() !== ''
+  if (!invoice) return null
 
   return (
     <DashboardLayout>
-      <div className="max-w-4xl mx-auto">
-        {/* Header */}
-        <div className="mb-6">
-          <Link href="/invoices" className="inline-flex items-center text-sm text-gray-500 hover:text-gray-700 mb-4">
-            <ArrowLeftIcon className="h-4 w-4 mr-1" />
-            Back to Invoices
-          </Link>
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">{invoice.invoiceNumber}</h1>
-              <p className="text-gray-600">Invoice for {invoice.clientId.name}</p>
+      <div className="max-w-7xl mx-auto space-y-6 animate-fade-in w-full">
+        {/* Navigation & Actions Topbar */}
+        <div className="space-y-3">
+          <div>
+            <Link
+              href="/invoices"
+              className="inline-flex items-center text-xs font-semibold text-slate-500 hover:text-slate-800 transition-colors group"
+            >
+              <ArrowLeftIcon className="h-3.5 w-3.5 mr-1 group-hover:-translate-x-0.5 transition-transform" />
+              Back to Invoices
+            </Link>
+          </div>
+
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 pb-1">
+            <div className="flex items-center gap-3 shrink-0">
+              <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight whitespace-nowrap">
+                {invoice.invoiceNumber}
+              </h1>
+              <StatusBadge status={invoice.status} pulse={invoice.status === 'sent'} />
             </div>
-            <div className="flex items-center space-x-3 mt-4 sm:mt-0">
-              <button
-                onClick={handleRefresh}
-                className="btn-secondary inline-flex items-center"
-              >
-                <svg className="h-5 w-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-                Refresh
-              </button>
+
+            {/* Action Buttons Toolbar - Guaranteed Single Line on Desktop */}
+            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1 shrink-0">
               <Link
-                href={`/invoices/${invoiceId}/edit`}
-                className="btn-secondary inline-flex items-center"
+                href={`/invoices/${invoice._id}/edit`}
+                className="btn-secondary text-xs py-2 px-3 whitespace-nowrap shrink-0 inline-flex items-center"
               >
-                <PencilIcon className="h-5 w-5 mr-2" />
+                <PencilIcon className="h-3.5 w-3.5 mr-1.5" />
                 Edit
               </Link>
+
               <button
                 onClick={handleDownloadPDF}
-                className="btn-secondary inline-flex items-center"
+                disabled={downloading}
+                className="btn-secondary text-xs py-2 px-3 whitespace-nowrap shrink-0 inline-flex items-center disabled:opacity-50"
               >
-                <DocumentArrowDownIcon className="h-5 w-5 mr-2" />
+                {downloading ? (
+                  <div className="h-3.5 w-3.5 border-2 border-slate-700 border-t-transparent rounded-full animate-spin mr-1.5" />
+                ) : (
+                  <ArrowDownTrayIcon className="h-3.5 w-3.5 mr-1.5" />
+                )}
                 Download PDF
               </button>
-              {hasClientEmail && (
-                <div className="relative">
+
+              <button
+                onClick={() => handleSendEmail(invoice.status === 'sent' ? 'reminder' : 'invoice')}
+                disabled={emailLoading}
+                className="btn-secondary text-xs py-2 px-3 whitespace-nowrap shrink-0 inline-flex items-center disabled:opacity-50 text-indigo-700 border-indigo-200 hover:bg-indigo-50"
+              >
+                {emailLoading ? (
+                  <div className="h-3.5 w-3.5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin mr-1.5" />
+                ) : (
+                  <PaperAirplaneIcon className="h-3.5 w-3.5 mr-1.5 text-indigo-600" />
+                )}
+                {invoice.status === 'sent' ? 'Send Reminder' : 'Email Invoice'}
+              </button>
+
+              <button
+                onClick={handleCopyPaymentLink}
+                className="btn-secondary text-xs py-2 px-3 whitespace-nowrap shrink-0 inline-flex items-center text-slate-700 border-slate-200 hover:bg-slate-50"
+                title="Copy the public payment link to share with client"
+              >
+                <LinkIcon className="h-3.5 w-3.5 mr-1.5 text-slate-500" />
+                {copiedLink ? 'Link Copied!' : 'Copy Payment Link'}
+              </button>
+
+              {invoice.status !== 'paid' ? (
+                <>
                   <button
-                    onClick={() => handleSendEmail('invoice')}
-                    disabled={emailLoading}
-                    className="btn-primary inline-flex items-center disabled:opacity-50"
+                    onClick={() => setIsUpiModalOpen(true)}
+                    className="btn-primary text-xs py-2 px-3.5 whitespace-nowrap shrink-0 inline-flex items-center bg-indigo-600 hover:bg-indigo-700 shadow-indigo-500/20 text-white font-bold"
+                    title="Pay with Google Pay, PhonePe, Paytm, BHIM, or CRED QR"
                   >
-                    <EnvelopeIcon className="h-5 w-5 mr-2" />
-                    {emailLoading ? 'Sending...' : 'Send Invoice'}
+                    <QrCodeIcon className="h-3.5 w-3.5 mr-1.5" />
+                    Pay via UPI
                   </button>
-                </div>
-              )}
-              {invoice.status !== 'paid' && (
+
+                  <button
+                    onClick={() => handleToggleStatus('paid')}
+                    className="btn-secondary text-xs py-2 px-3 whitespace-nowrap shrink-0 inline-flex items-center text-emerald-700 border-emerald-200 hover:bg-emerald-50 font-bold"
+                    title="Mark this invoice as Paid manually"
+                  >
+                    <CheckCircleIcon className="h-3.5 w-3.5 mr-1.5 text-emerald-600" />
+                    Mark as Paid
+                  </button>
+                </>
+              ) : (
                 <button
-                  onClick={handlePayment}
-                  disabled={paymentLoading}
-                  className="btn-primary inline-flex items-center disabled:opacity-50"
+                  onClick={() => handleToggleStatus('sent')}
+                  className="btn-secondary text-xs py-2 px-3 whitespace-nowrap shrink-0 inline-flex items-center text-slate-600 hover:bg-slate-50"
+                  title="Mark invoice as Sent/Pending"
                 >
-                  <CreditCardIcon className="h-5 w-5 mr-2" />
-                  {paymentLoading ? 'Processing...' : 'Pay Now'}
+                  <ArrowPathIcon className="h-3.5 w-3.5 mr-1.5" />
+                  Unmark Paid
                 </button>
               )}
             </div>
           </div>
         </div>
 
-        {/* Email Status */}
-        {hasClientEmail && emailStatus && (
-          <div className="card mb-6">
-            <div className="px-6 py-4 border-b border-gray-200">
-              <h2 className="text-lg font-medium text-gray-900">Email Status</h2>
-            </div>
-            <div className="p-6">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <span className="text-sm text-gray-500">Status:</span>
-                  <div className="mt-1">
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getEmailStatusColor(emailStatus.emailStatus)}`}>
-                      {emailStatus.emailStatus || 'Not sent'}
-                    </span>
-                  </div>
-                </div>
-                <div>
-                  <span className="text-sm text-gray-500">Last Sent:</span>
-                  <p className="text-sm font-medium text-gray-900">
-                    {emailStatus.lastEmailedAt 
-                      ? new Date(emailStatus.lastEmailedAt).toLocaleDateString()
-                      : 'Never'
-                    }
-                  </p>
-                </div>
-                <div>
-                  <span className="text-sm text-gray-500">Client Email:</span>
-                  <p className="text-sm font-medium text-gray-900">{invoice.clientId.email}</p>
-                </div>
+        {/* Payment Success Celebration Banner */}
+        {paymentSuccessCelebration && (
+          <div className="p-4 rounded-2xl bg-emerald-500 text-white shadow-xl shadow-emerald-500/20 flex flex-col sm:flex-row items-center justify-between gap-3 animate-slide-up">
+            <div className="flex items-center gap-3 text-center sm:text-left">
+              <div className="h-10 w-10 rounded-full bg-white/20 flex items-center justify-center flex-shrink-0">
+                <SparklesIcon className="h-6 w-6 text-white" />
               </div>
-              
-              {/* Email Actions */}
-              <div className="mt-4 flex space-x-3">
-                <button
-                  onClick={() => handleSendEmail('invoice')}
-                  disabled={emailLoading}
-                  className="btn-secondary btn-sm inline-flex items-center disabled:opacity-50"
-                >
-                  <EnvelopeIcon className="h-4 w-4 mr-1" />
-                  {emailLoading ? 'Sending...' : 'Send Invoice'}
-                </button>
-                {invoice.status === 'sent' && (
-                  <button
-                    onClick={() => handleSendEmail('reminder')}
-                    disabled={emailLoading}
-                    className="btn-secondary btn-sm inline-flex items-center disabled:opacity-50"
-                  >
-                    <ClockIcon className="h-4 w-4 mr-1" />
-                    {emailLoading ? 'Sending...' : 'Send Reminder'}
-                  </button>
-                )}
+              <div>
+                <h3 className="font-extrabold text-base">🎉 Payment Successful!</h3>
+                <p className="text-xs text-emerald-100 font-medium">
+                  Payment has been received and verified. This invoice is now officially marked as <strong>PAID</strong>.
+                </p>
               </div>
-
-              {/* Email Logs */}
-              {emailStatus.emailLogs && emailStatus.emailLogs.length > 0 && (
-                <div className="mt-4">
-                  <h4 className="text-sm font-medium text-gray-900 mb-2">Email History</h4>
-                  <div className="space-y-2">
-                    {emailStatus.emailLogs.map((log: any, index: number) => (
-                      <div key={index} className="flex items-center justify-between text-sm">
-                        <div>
-                          <span className="font-medium">{log.emailType === 'invoice' ? 'Invoice' : 'Reminder'}</span>
-                          <span className="text-gray-500 ml-2">
-                            sent to {log.recipient}
-                          </span>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${getEmailStatusColor(log.status)}`}>
-                            {log.status}
-                          </span>
-                          <span className="text-gray-500">
-                            {new Date(log.sentAt).toLocaleDateString()}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
+            <button
+              onClick={() => setPaymentSuccessCelebration(false)}
+              className="px-4 py-1.5 rounded-lg bg-white text-emerald-800 text-xs font-bold hover:bg-emerald-50 transition-colors"
+            >
+              Done
+            </button>
           </div>
         )}
 
-        {!hasClientEmail && (
-          <div className="card mb-6 bg-yellow-50 border-yellow-200">
-            <div className="p-4">
-              <div className="flex items-center">
-                <EnvelopeIcon className="h-5 w-5 text-yellow-600 mr-3" />
-                <div>
-                  <h3 className="text-sm font-medium text-yellow-800">
-                    No client email available
-                  </h3>
-                  <p className="text-sm text-yellow-700">
-                    Add an email address to the client to enable email invoicing.
-                  </p>
-                </div>
-              </div>
-            </div>
+        {/* Feedback alert */}
+        {feedbackMessage && (
+          <div className="p-3.5 rounded-xl bg-primary-50 border border-primary-200 text-primary-800 text-xs font-semibold flex items-center justify-between">
+            <span>{feedbackMessage}</span>
+            <button onClick={() => setFeedbackMessage(null)} className="text-primary-600 hover:underline text-xs">
+              Dismiss
+            </button>
           </div>
         )}
 
-        {/* Invoice Details */}
+        {/* Main Document Layout (Grid with document card & sidebar stats) */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Invoice Information */}
-          <div className="lg:col-span-2">
-            <div className="card">
-              <div className="px-6 py-4 border-b border-gray-200">
-                <h2 className="text-lg font-medium text-gray-900">Invoice Details</h2>
+          {/* Official Invoice Sheet (2 cols) */}
+          <div className="lg:col-span-2 card bg-white p-6 sm:p-10 shadow-lg border border-slate-200/80 space-y-8">
+            {/* Invoice Header */}
+            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-6 pb-8 border-b border-slate-100">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <div className="h-8 w-8 rounded-lg bg-primary-600 flex items-center justify-center text-white font-bold text-sm">
+                    <DocumentTextIcon className="h-5 w-5" />
+                  </div>
+                  <span className="text-lg font-black tracking-tight text-slate-900">Invoicely</span>
+                </div>
+                <p className="text-xs text-slate-400">Professional Billing & Financial Services</p>
               </div>
-              <div className="p-6">
-                {/* Client Information */}
-                <div className="mb-6">
-                  <h3 className="text-sm font-medium text-gray-900 mb-2">Bill To:</h3>
-                  <div className="text-sm text-gray-600">
-                    <p className="font-medium">{invoice.clientId.name}</p>
-                    {invoice.clientId.company && <p>{invoice.clientId.company}</p>}
-                    {invoice.clientId.address && (
-                      <div>
-                        {invoice.clientId.address.street && <p>{invoice.clientId.address.street}</p>}
-                        <p>
-                          {[
-                            invoice.clientId.address.city,
-                            invoice.clientId.address.state,
-                            invoice.clientId.address.zipCode
-                          ].filter(Boolean).join(', ')}
-                        </p>
-                        {invoice.clientId.address.country && <p>{invoice.clientId.address.country}</p>}
-                      </div>
-                    )}
-                  </div>
-                </div>
 
-                {/* Invoice Items */}
-                <div className="mb-6">
-                  <h3 className="text-sm font-medium text-gray-900 mb-4">Items</h3>
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200">
-                      <thead>
-                        <tr>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Description
-                          </th>
-                          <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Qty
-                          </th>
-                          <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Rate
-                          </th>
-                          <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Amount
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-200">
-                        {invoice.items.map((item, index) => (
-                          <tr key={index}>
-                            <td className="px-3 py-2 text-sm text-gray-900">{item.description}</td>
-                            <td className="px-3 py-2 text-sm text-gray-900 text-right">{item.quantity}</td>
-                            <td className="px-3 py-2 text-sm text-gray-900 text-right">${item.rate.toFixed(2)}</td>
-                            <td className="px-3 py-2 text-sm text-gray-900 text-right">${item.amount.toFixed(2)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                {/* Totals */}
-                <div className="border-t border-gray-200 pt-4">
-                  <div className="flex justify-between text-sm mb-2">
-                    <span className="text-gray-600">Subtotal:</span>
-                    <span className="text-gray-900">${invoice.subtotal.toFixed(2)}</span>
-                  </div>
-                  {invoice.taxRate > 0 && (
-                    <div className="flex justify-between text-sm mb-2">
-                      <span className="text-gray-600">Tax ({invoice.taxRate}%):</span>
-                      <span className="text-gray-900">${invoice.taxAmount.toFixed(2)}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between text-lg font-bold">
-                    <span>Total:</span>
-                    <span>${invoice.total.toFixed(2)}</span>
-                  </div>
-                </div>
-
-                {/* Notes and Terms */}
-                {(invoice.notes || invoice.terms) && (
-                  <div className="mt-6 space-y-4">
-                    {invoice.notes && (
-                      <div>
-                        <h4 className="text-sm font-medium text-gray-900 mb-2">Notes:</h4>
-                        <p className="text-sm text-gray-600">{invoice.notes}</p>
-                      </div>
-                    )}
-                    {invoice.terms && (
-                      <div>
-                        <h4 className="text-sm font-medium text-gray-900 mb-2">Terms & Conditions:</h4>
-                        <p className="text-sm text-gray-600">{invoice.terms}</p>
-                      </div>
-                    )}
-                  </div>
-                )}
+              <div className="sm:text-right space-y-1 shrink-0">
+                <span className="text-2xl font-black text-slate-900 tracking-tight whitespace-nowrap">{invoice.invoiceNumber}</span>
+                <p className="text-xs text-slate-500">
+                  Issued: <span className="font-semibold text-slate-700">{new Date(invoice.issueDate).toLocaleDateString()}</span>
+                </p>
+                <p className="text-xs text-slate-500">
+                  Due: <span className="font-semibold text-rose-600">{new Date(invoice.dueDate).toLocaleDateString()}</span>
+                </p>
               </div>
             </div>
-          </div>
 
-          {/* Invoice Summary */}
-          <div className="lg:col-span-1">
-            <div className="card">
-              <div className="px-6 py-4 border-b border-gray-200">
-                <h2 className="text-lg font-medium text-gray-900">Summary</h2>
+            {/* Client & Bill-To info */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pb-6 border-b border-slate-100 text-sm">
+              <div className="space-y-1">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Billed To</p>
+                <p className="font-bold text-slate-800 text-base">{invoice.clientId?.name}</p>
+                {invoice.clientId?.company && (
+                  <p className="text-xs text-slate-600 font-medium">{invoice.clientId.company}</p>
+                )}
+                <p className="text-xs text-slate-500">{invoice.clientId?.email}</p>
               </div>
-              <div className="p-6 space-y-4">
-                <div>
-                  <span className="text-sm text-gray-500">Status:</span>
-                  <div className="mt-1">
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(invoice.status)}`}>
-                      {invoice.status}
-                    </span>
-                  </div>
-                </div>
-                <div>
-                  <span className="text-sm text-gray-500">Issue Date:</span>
-                  <p className="text-sm font-medium text-gray-900">
-                    {format(new Date(invoice.issueDate), 'MMM dd, yyyy')}
-                  </p>
-                </div>
-                <div>
-                  <span className="text-sm text-gray-500">Due Date:</span>
-                  <p className="text-sm font-medium text-gray-900">
-                    {format(new Date(invoice.dueDate), 'MMM dd, yyyy')}
-                  </p>
+
+              <div className="space-y-1 sm:text-right">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Payment Status</p>
+                <div className="sm:inline-block">
+                  <StatusBadge status={invoice.status} />
                 </div>
                 {invoice.paidAt && (
+                  <p className="text-xs text-emerald-600 font-medium mt-1">
+                    Paid on {new Date(invoice.paidAt).toLocaleDateString()}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Line items table */}
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-left">
+                <thead>
+                  <tr className="border-b border-slate-200 text-slate-400 text-[11px] font-bold uppercase tracking-wider">
+                    <th className="py-3">Description</th>
+                    <th className="py-3 text-center">Qty</th>
+                    <th className="py-3 text-right">Rate</th>
+                    <th className="py-3 text-right">Amount</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-sm text-slate-700">
+                  {invoice.items.map((item, idx) => (
+                    <tr key={idx}>
+                      <td className="py-4 font-semibold text-slate-800">{item.description}</td>
+                      <td className="py-4 text-center text-slate-600">{item.quantity}</td>
+                      <td className="py-4 text-right text-slate-600">
+                        ₹{item.rate.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </td>
+                      <td className="py-4 text-right font-bold text-slate-900">
+                        ₹{item.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Totals Breakdown */}
+            <div className="flex flex-col sm:flex-row justify-between pt-6 border-t border-slate-100 gap-6">
+              <div className="text-xs text-slate-500 space-y-3 max-w-xs">
+                {invoice.notes && (
                   <div>
-                    <span className="text-sm text-gray-500">Paid Date:</span>
-                    <p className="text-sm font-medium text-gray-900">
-                      {format(new Date(invoice.paidAt), 'MMM dd, yyyy')}
-                    </p>
+                    <span className="font-bold uppercase text-[10px] text-slate-400">Notes</span>
+                    <p className="mt-0.5">{invoice.notes}</p>
                   </div>
                 )}
-                <div>
-                  <span className="text-sm text-gray-500">Total Amount:</span>
-                  <p className="text-lg font-bold text-gray-900">${invoice.total.toFixed(2)}</p>
+                {invoice.terms && (
+                  <div>
+                    <span className="font-bold uppercase text-[10px] text-slate-400">Terms</span>
+                    <p className="mt-0.5">{invoice.terms}</p>
+                  </div>
+                )}
+              </div>
+
+              <div className="w-full sm:w-64 space-y-2 text-sm">
+                <div className="flex justify-between text-slate-600">
+                  <span>Subtotal</span>
+                  <span className="font-semibold text-slate-800">
+                    ₹{invoice.subtotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+                {invoice.taxRate > 0 && (
+                  <div className="flex justify-between text-slate-600">
+                    <span>Tax ({invoice.taxRate}%)</span>
+                    <span className="font-semibold text-slate-800">
+                      ₹{invoice.taxAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                )}
+                <div className="pt-2 border-t border-slate-200 flex justify-between items-baseline">
+                  <span className="font-bold text-slate-900">Total</span>
+                  <span className="text-2xl font-black text-slate-900">
+                    ₹{invoice.total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </span>
                 </div>
               </div>
             </div>
           </div>
+
+          {/* Email Activity & Status Sidebar (1 col) */}
+          <div className="space-y-6">
+            {/* Email Tracking Card */}
+            <div className="card p-6 space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <div className="flex items-center gap-2">
+                  <EnvelopeIcon className="h-5 w-5 text-indigo-600" />
+                  <h3 className="text-base font-bold text-slate-900">Email Tracking</h3>
+                </div>
+                <StatusBadge status={invoice.emailStatus || 'not_sent'} />
+              </div>
+
+              <div className="space-y-3 text-xs">
+                <div className="flex justify-between text-slate-600">
+                  <span>Recipient:</span>
+                  <span className="font-semibold text-slate-800">{invoice.clientId?.email}</span>
+                </div>
+                {invoice.lastEmailedAt && (
+                  <div className="flex justify-between text-slate-600">
+                    <span>Last Sent:</span>
+                    <span className="font-semibold text-slate-800">
+                      {new Date(invoice.lastEmailedAt).toLocaleString()}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              <div className="pt-2">
+                <button
+                  onClick={() => handleSendEmail('reminder')}
+                  disabled={emailLoading}
+                  className="btn-secondary w-full text-xs py-2"
+                >
+                  <PaperAirplaneIcon className="h-3.5 w-3.5 mr-1 text-slate-500" />
+                  Send Payment Reminder
+                </button>
+              </div>
+            </div>
+
+            {/* Email Logs History */}
+            {invoice.emailLogs && invoice.emailLogs.length > 0 && (
+              <div className="card p-6 space-y-3">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                  Dispatch History ({invoice.emailLogs.length})
+                </h3>
+                <div className="space-y-2 max-h-60 overflow-y-auto">
+                  {invoice.emailLogs.map((log, idx) => (
+                    <div key={idx} className="p-2.5 rounded-xl bg-slate-50 border border-slate-100 text-xs space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-slate-800 capitalize">{log.emailType}</span>
+                        <StatusBadge status={log.status} />
+                      </div>
+                      <p className="text-[11px] text-slate-400">{new Date(log.sentAt).toLocaleString()}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
+
+        {/* UPI Payment Modal */}
+        <UPIPaymentModal
+          isOpen={isUpiModalOpen}
+          onClose={() => setIsUpiModalOpen(false)}
+          onConfirmPaid={() => handleToggleStatus('paid')}
+          invoiceNumber={invoice.invoiceNumber}
+          amount={invoice.total}
+          payeeName={userProfile?.upi_name || userProfile?.name || 'Hemant Meena'}
+          initialUpiId={userProfile?.upi_id || process.env.NEXT_PUBLIC_DEFAULT_UPI_ID || 'hemantmeena2005@oksbi'}
+          customQrUrl={userProfile?.upi_qr_code || undefined}
+        />
       </div>
     </DashboardLayout>
   )
-} 
+}

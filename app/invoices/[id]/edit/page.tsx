@@ -3,8 +3,15 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import DashboardLayout from '@/components/DashboardLayout'
-import { ArrowLeftIcon, PlusIcon, TrashIcon } from '@heroicons/react/24/outline'
+import { 
+  ArrowLeftIcon, 
+  PlusIcon, 
+  TrashIcon, 
+  CalculatorIcon, 
+  CheckIcon 
+} from '@heroicons/react/24/outline'
 import Link from 'next/link'
+import { Skeleton } from '@/components/ui/Skeleton'
 
 interface InvoiceItem {
   description: string
@@ -17,6 +24,7 @@ interface Client {
   _id: string
   name: string
   email: string
+  company?: string
 }
 
 interface Invoice {
@@ -56,7 +64,6 @@ export default function EditInvoicePage({ params }: { params: { id: string } }) 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        // Fetch invoice
         const invoiceResponse = await fetch(`/api/invoices/${params.id}`)
         if (!invoiceResponse.ok) {
           throw new Error('Failed to fetch invoice')
@@ -64,26 +71,25 @@ export default function EditInvoicePage({ params }: { params: { id: string } }) 
         const invoiceData = await invoiceResponse.json()
         setInvoice(invoiceData)
 
-        // Fetch clients
         const clientsResponse = await fetch('/api/clients')
         if (clientsResponse.ok) {
           const clientsData = await clientsResponse.json()
           setClients(clientsData)
         }
 
-        // Set form data
         setFormData({
-          clientId: invoiceData.clientId._id,
-          issueDate: new Date(invoiceData.issueDate).toISOString().split('T')[0],
-          dueDate: new Date(invoiceData.dueDate).toISOString().split('T')[0],
-          items: invoiceData.items || [],
+          clientId: invoiceData.clientId?._id || invoiceData.clientId,
+          issueDate: invoiceData.issueDate ? new Date(invoiceData.issueDate).toISOString().split('T')[0] : '',
+          dueDate: invoiceData.dueDate ? new Date(invoiceData.dueDate).toISOString().split('T')[0] : '',
+          items: (invoiceData.items && invoiceData.items.length > 0) 
+            ? invoiceData.items 
+            : [{ description: 'Professional Services', quantity: 1, rate: 0, amount: 0 }],
           taxRate: invoiceData.taxRate || 0,
           notes: invoiceData.notes || '',
           terms: invoiceData.terms || ''
         })
-      } catch (error) {
+      } catch (err) {
         setError('Failed to load invoice')
-        console.error('Error fetching data:', error)
       } finally {
         setLoading(false)
       }
@@ -92,25 +98,24 @@ export default function EditInvoicePage({ params }: { params: { id: string } }) 
     fetchData()
   }, [params.id])
 
-  const calculateItemAmount = (quantity: number, rate: number) => {
-    return quantity * rate
+  const calculateTotals = () => {
+    const subtotal = formData.items.reduce((sum, item) => sum + (item.amount || 0), 0)
+    const taxAmount = (subtotal * (formData.taxRate || 0)) / 100
+    const total = subtotal + taxAmount
+    return { subtotal, taxAmount, total }
   }
 
-  const updateItem = (index: number, field: keyof InvoiceItem, value: string | number) => {
+  const handleItemChange = (index: number, field: keyof InvoiceItem, value: string | number) => {
     const newItems = [...formData.items]
-    newItems[index] = {
-      ...newItems[index],
-      [field]: value
-    }
-    
-    // Recalculate amount
+    const updatedValue = field === 'quantity' || field === 'rate' ? Number(value) : value
+    newItems[index] = { ...newItems[index], [field]: updatedValue }
+
     if (field === 'quantity' || field === 'rate') {
-      newItems[index].amount = calculateItemAmount(
-        newItems[index].quantity,
-        newItems[index].rate
-      )
+      const qty = field === 'quantity' ? Number(value) : newItems[index].quantity
+      const rate = field === 'rate' ? Number(value) : newItems[index].rate
+      newItems[index].amount = qty * rate
     }
-    
+
     setFormData(prev => ({ ...prev, items: newItems }))
   }
 
@@ -122,17 +127,12 @@ export default function EditInvoicePage({ params }: { params: { id: string } }) 
   }
 
   const removeItem = (index: number) => {
-    setFormData(prev => ({
-      ...prev,
-      items: prev.items.filter((_, i) => i !== index)
-    }))
-  }
-
-  const calculateTotals = () => {
-    const subtotal = formData.items.reduce((sum, item) => sum + item.amount, 0)
-    const taxAmount = (subtotal * formData.taxRate) / 100
-    const total = subtotal + taxAmount
-    return { subtotal, taxAmount, total }
+    if (formData.items.length > 1) {
+      setFormData(prev => ({
+        ...prev,
+        items: prev.items.filter((_, i) => i !== index)
+      }))
+    }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -140,318 +140,314 @@ export default function EditInvoicePage({ params }: { params: { id: string } }) 
     setSaving(true)
     setError('')
 
-    const { subtotal, taxAmount, total } = calculateTotals()
-
     try {
       const response = await fetch(`/api/invoices/${params.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          ...formData,
-          subtotal,
-          taxAmount,
-          total
-        }),
+        body: JSON.stringify(formData),
       })
 
-      if (!response.ok) {
-        throw new Error('Failed to update invoice')
+      if (response.ok) {
+        router.push(`/invoices/${params.id}`)
+      } else {
+        const errData = await response.json()
+        setError(errData.error || 'Failed to update invoice')
       }
-
-      router.push(`/invoices/${params.id}`)
-    } catch (error) {
-      setError('Failed to update invoice')
-      console.error('Error updating invoice:', error)
+    } catch (err) {
+      setError('An error occurred while saving invoice changes')
     } finally {
       setSaving(false)
     }
   }
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-    const { name, value } = e.target
-    setFormData(prev => ({
-      ...prev,
-      [name]: name === 'taxRate' ? parseFloat(value) || 0 : value
-    }))
-  }
+  const { subtotal, taxAmount, total } = calculateTotals()
 
   if (loading) {
     return (
       <DashboardLayout>
-        <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+        <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
+          <Skeleton className="h-6 w-32" />
+          <div className="card p-6 space-y-4">
+            <Skeleton className="h-8 w-48" />
+            <Skeleton className="h-32 w-full" />
+            <Skeleton className="h-48 w-full" />
+          </div>
         </div>
       </DashboardLayout>
     )
   }
-
-  if (error && !invoice) {
-    return (
-      <DashboardLayout>
-        <div className="text-center py-12">
-          <p className="text-red-600 mb-4">{error}</p>
-          <Link href="/invoices" className="btn btn-primary">
-            Back to Invoices
-          </Link>
-        </div>
-      </DashboardLayout>
-    )
-  }
-
-  const { subtotal, taxAmount, total } = calculateTotals()
 
   return (
     <DashboardLayout>
-      <div className="max-w-4xl mx-auto">
+      <div className="max-w-7xl mx-auto space-y-6 animate-fade-in w-full">
         {/* Header */}
-        <div className="mb-6">
-          <div className="flex items-center mb-4">
-            <Link href={`/invoices/${params.id}`} className="mr-4 text-gray-600 hover:text-gray-900">
-              <ArrowLeftIcon className="h-5 w-5" />
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <Link
+              href={`/invoices/${params.id}`}
+              className="inline-flex items-center text-xs font-semibold text-slate-500 hover:text-slate-800 mb-2 transition-colors"
+            >
+              <ArrowLeftIcon className="h-3.5 w-3.5 mr-1" />
+              Back to Invoice {invoice?.invoiceNumber}
             </Link>
-            <h1 className="text-2xl font-bold text-gray-900">Edit Invoice</h1>
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+              Edit Invoice {invoice?.invoiceNumber}
+            </h1>
+            <p className="text-slate-500 text-sm mt-0.5">Update invoice details, rates, and line items</p>
           </div>
-          <p className="text-gray-600">Update invoice #{invoice?.invoiceNumber}</p>
         </div>
 
-        {/* Form */}
-        <div className="card">
-          <form onSubmit={handleSubmit} className="space-y-6">
-            {error && (
-              <div className="bg-red-50 border border-red-200 rounded-md p-4">
-                <p className="text-red-600 text-sm">{error}</p>
-              </div>
-            )}
+        {error && (
+          <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-sm font-semibold">
+            {error}
+          </div>
+        )}
 
-            {/* Basic Information */}
-            <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
-              <div>
-                <label htmlFor="clientId" className="block text-sm font-medium text-gray-700 mb-1">
-                  Client *
-                </label>
-                <select
-                  id="clientId"
-                  name="clientId"
-                  value={formData.clientId}
-                  onChange={handleChange}
-                  required
-                  className="input"
-                >
-                  <option value="">Select a client</option>
-                  {clients.map((client) => (
-                    <option key={client._id} value={client._id}>
-                      {client.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+        <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Main Content (2 cols) */}
+          <div className="lg:col-span-2 space-y-6">
+            {/* Metadata Card */}
+            <div className="card p-6 space-y-4">
+              <h2 className="text-base font-bold text-slate-900 border-b border-slate-100 pb-3">
+                1. Invoice Details
+              </h2>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+                    Client
+                  </label>
+                  <select
+                    value={formData.clientId}
+                    onChange={(e) => setFormData(prev => ({ ...prev, clientId: e.target.value }))}
+                    className="input-field text-xs"
+                  >
+                    {clients.map((client) => (
+                      <option key={client._id} value={client._id}>
+                        {client.name} {client.company ? `(${client.company})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-              <div>
-                <label htmlFor="issueDate" className="block text-sm font-medium text-gray-700 mb-1">
-                  Issue Date *
-                </label>
-                <input
-                  type="date"
-                  id="issueDate"
-                  name="issueDate"
-                  value={formData.issueDate}
-                  onChange={handleChange}
-                  required
-                  className="input"
-                />
-              </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+                    Issue Date
+                  </label>
+                  <input
+                    type="date"
+                    value={formData.issueDate}
+                    onChange={(e) => setFormData(prev => ({ ...prev, issueDate: e.target.value }))}
+                    className="input-field text-xs"
+                  />
+                </div>
 
-              <div>
-                <label htmlFor="dueDate" className="block text-sm font-medium text-gray-700 mb-1">
-                  Due Date *
-                </label>
-                <input
-                  type="date"
-                  id="dueDate"
-                  name="dueDate"
-                  value={formData.dueDate}
-                  onChange={handleChange}
-                  required
-                  className="input"
-                />
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+                    Due Date
+                  </label>
+                  <input
+                    type="date"
+                    value={formData.dueDate}
+                    onChange={(e) => setFormData(prev => ({ ...prev, dueDate: e.target.value }))}
+                    className="input-field text-xs"
+                  />
+                </div>
               </div>
             </div>
 
-            {/* Invoice Items */}
-            <div>
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-medium text-gray-900">Invoice Items</h3>
+            {/* Line Items Card */}
+            <div className="card p-6 space-y-5">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <h2 className="text-base font-bold text-slate-900">2. Line Items</h2>
                 <button
                   type="button"
                   onClick={addItem}
-                  className="btn btn-secondary btn-sm"
+                  className="btn-secondary text-xs py-1.5 px-3"
                 >
-                  <PlusIcon className="h-4 w-4 mr-1" />
-                  Add Item
+                  <PlusIcon className="h-3.5 w-3.5 mr-1 stroke-[2.5]" />
+                  Add Line Item
                 </button>
               </div>
 
-              <div className="space-y-4">
+              <div className="space-y-3">
                 {formData.items.map((item, index) => (
-                  <div key={index} className="grid grid-cols-12 gap-4 items-end border border-gray-200 rounded-lg p-4">
-                    <div className="col-span-6">
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Description
-                      </label>
-                      <input
-                        type="text"
-                        value={item.description}
-                        onChange={(e) => updateItem(index, 'description', e.target.value)}
-                        className="input"
-                        placeholder="Item description"
-                        required
-                      />
+                  <div key={index} className="p-4 rounded-xl bg-slate-50/70 border border-slate-200/70 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                        Item #{index + 1}
+                      </span>
+                      {formData.items.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => removeItem(index)}
+                          className="p-1 text-rose-500 hover:text-rose-700 rounded-lg hover:bg-rose-50 transition-colors"
+                        >
+                          <TrashIcon className="h-4 w-4" />
+                        </button>
+                      )}
                     </div>
 
-                    <div className="col-span-2">
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Quantity
-                      </label>
-                      <input
-                        type="number"
-                        min="1"
-                        value={item.quantity}
-                        onChange={(e) => updateItem(index, 'quantity', parseInt(e.target.value) || 1)}
-                        className="input"
-                        required
-                      />
-                    </div>
-
-                    <div className="col-span-2">
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Rate ($)
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={item.rate}
-                        onChange={(e) => updateItem(index, 'rate', parseFloat(e.target.value) || 0)}
-                        className="input"
-                        required
-                      />
-                    </div>
-
-                    <div className="col-span-1">
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Amount
-                      </label>
-                      <div className="text-sm font-medium text-gray-900">
-                        ${item.amount.toFixed(2)}
+                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
+                      <div className="sm:col-span-6">
+                        <label className="block text-[11px] font-bold uppercase text-slate-500 mb-1">
+                          Description
+                        </label>
+                        <input
+                          type="text"
+                          value={item.description}
+                          onChange={(e) => handleItemChange(index, 'description', e.target.value)}
+                          className="input-field text-xs"
+                        />
                       </div>
-                    </div>
 
-                    <div className="col-span-1">
-                      <button
-                        type="button"
-                        onClick={() => removeItem(index)}
-                        className="text-red-600 hover:text-red-800"
-                      >
-                        <TrashIcon className="h-5 w-5" />
-                      </button>
+                      <div className="sm:col-span-2">
+                        <label className="block text-[11px] font-bold uppercase text-slate-500 mb-1">
+                          Qty
+                        </label>
+                        <input
+                          type="number"
+                          min="1"
+                          value={item.quantity}
+                          onChange={(e) => handleItemChange(index, 'quantity', e.target.value)}
+                          className="input-field text-xs"
+                        />
+                      </div>
+
+                      <div className="sm:col-span-2">
+                        <label className="block text-[11px] font-bold uppercase text-slate-500 mb-1">
+                          Rate (₹)
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={item.rate}
+                          onChange={(e) => handleItemChange(index, 'rate', e.target.value)}
+                          className="input-field text-xs"
+                        />
+                      </div>
+
+                      <div className="sm:col-span-2">
+                        <label className="block text-[11px] font-bold uppercase text-slate-500 mb-1">
+                          Amount
+                        </label>
+                        <div className="h-10 px-3 flex items-center justify-end rounded-xl bg-slate-100 font-extrabold text-xs text-slate-800">
+                          ₹{(item.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 ))}
+              </div>
+            </div>
 
-                {formData.items.length === 0 && (
-                  <div className="text-center py-8 text-gray-500">
-                    <p>No items added yet. Click "Add Item" to get started.</p>
+            {/* Notes & Terms */}
+            <div className="card p-6 space-y-4">
+              <h2 className="text-base font-bold text-slate-900 border-b border-slate-100 pb-3">
+                3. Additional Notes & Terms
+              </h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+                    Notes
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={formData.notes}
+                    onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
+                    className="input-field text-xs resize-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+                    Terms
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={formData.terms}
+                    onChange={(e) => setFormData(prev => ({ ...prev, terms: e.target.value }))}
+                    className="input-field text-xs resize-none"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Sidebar Summary (1 col) */}
+          <div className="space-y-6">
+            <div className="card p-6 space-y-5 sticky top-24">
+              <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+                <CalculatorIcon className="h-5 w-5 text-primary-600" />
+                <h3 className="text-base font-bold text-slate-900">Summary</h3>
+              </div>
+
+              <div className="space-y-3 text-sm">
+                <div className="flex justify-between items-center text-slate-600">
+                  <span>Subtotal</span>
+                  <span className="font-bold text-slate-800">
+                    ₹{subtotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+
+                <div>
+                  <div className="flex justify-between items-center text-slate-600 mb-1">
+                    <span className="text-xs font-semibold">Tax Rate (%)</span>
+                    <span className="text-xs font-bold text-slate-800">{formData.taxRate}%</span>
+                  </div>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.1"
+                    value={formData.taxRate}
+                    onChange={(e) => setFormData(prev => ({ ...prev, taxRate: Number(e.target.value) }))}
+                    className="input-field text-xs"
+                    placeholder="Tax %"
+                  />
+                </div>
+
+                {taxAmount > 0 && (
+                  <div className="flex justify-between items-center text-slate-600">
+                    <span>Tax Amount</span>
+                    <span className="font-semibold text-slate-800">
+                      ₹{taxAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
                   </div>
                 )}
-              </div>
-            </div>
 
-            {/* Tax and Totals */}
-            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-              <div>
-                <label htmlFor="taxRate" className="block text-sm font-medium text-gray-700 mb-1">
-                  Tax Rate (%)
-                </label>
-                <input
-                  type="number"
-                  id="taxRate"
-                  name="taxRate"
-                  min="0"
-                  max="100"
-                  step="0.01"
-                  value={formData.taxRate}
-                  onChange={handleChange}
-                  className="input"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Subtotal:</span>
-                  <span className="font-medium">${subtotal.toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Tax ({formData.taxRate}%):</span>
-                  <span className="font-medium">${taxAmount.toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between text-lg font-bold border-t pt-2">
-                  <span>Total:</span>
-                  <span>${total.toFixed(2)}</span>
+                <div className="pt-3 border-t border-slate-200 flex justify-between items-baseline">
+                  <span className="text-sm font-bold text-slate-900 uppercase tracking-wider">Total Due</span>
+                  <span className="text-2xl font-black text-slate-900">
+                    ₹{total.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
                 </div>
               </div>
-            </div>
 
-            {/* Notes and Terms */}
-            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-              <div>
-                <label htmlFor="notes" className="block text-sm font-medium text-gray-700 mb-1">
-                  Notes
-                </label>
-                <textarea
-                  id="notes"
-                  name="notes"
-                  value={formData.notes}
-                  onChange={handleChange}
-                  rows={4}
-                  className="input"
-                  placeholder="Additional notes for the client"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="terms" className="block text-sm font-medium text-gray-700 mb-1">
-                  Terms & Conditions
-                </label>
-                <textarea
-                  id="terms"
-                  name="terms"
-                  value={formData.terms}
-                  onChange={handleChange}
-                  rows={4}
-                  className="input"
-                  placeholder="Payment terms and conditions"
-                />
+              <div className="pt-4 space-y-3">
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="btn-primary w-full shadow-glow-primary py-3 text-sm font-bold disabled:opacity-50"
+                >
+                  {saving ? (
+                    <div className="h-5 w-5 border-2 border-white border-t-transparent rounded-full animate-spin mx-auto" />
+                  ) : (
+                    'Save Changes'
+                  )}
+                </button>
+                <Link
+                  href={`/invoices/${params.id}`}
+                  className="btn-secondary w-full text-xs text-center py-2"
+                >
+                  Cancel
+                </Link>
               </div>
             </div>
-
-            {/* Actions */}
-            <div className="flex justify-end space-x-4 pt-6 border-t border-gray-200">
-              <Link href={`/invoices/${params.id}`} className="btn btn-secondary">
-                Cancel
-              </Link>
-              <button
-                type="submit"
-                disabled={saving}
-                className="btn btn-primary"
-              >
-                {saving ? 'Saving...' : 'Save Changes'}
-              </button>
-            </div>
-          </form>
-        </div>
+          </div>
+        </form>
       </div>
     </DashboardLayout>
   )
-} 
+}

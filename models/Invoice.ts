@@ -90,7 +90,7 @@ const InvoiceSchema = new mongoose.Schema({
   },
   notes: String,
   terms: String,
-  stripePaymentIntentId: String,
+  upiTransactionRef: String,
   paidAt: Date,
   emailLogs: [EmailLogSchema],
   lastEmailedAt: Date,

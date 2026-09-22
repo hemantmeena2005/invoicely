@@ -1,201 +1,121 @@
-# Invoicely - Professional Invoice Management SaaS
+# ⚡ Invoicely - Modern Invoice Management SaaS
 
-A full-stack invoice management SaaS application built with Next.js, featuring professional invoice creation, client management, payment processing, and email automation.
-
-## 🚀 Features
-
-- **Professional Invoice Creation**: Create beautiful, customizable invoices with PDF generation
-- **Client Management**: Complete CRUD operations for client information
-- **Payment Processing**: Stripe integration for secure online payments
-- **Email Automation**: Send invoices directly to clients with PDF attachments
-- **Analytics Dashboard**: Real-time insights into your invoicing business
-- **Google OAuth**: Secure authentication with Google accounts
-- **Responsive Design**: Modern UI that works on all devices
-
-## 🛠️ Tech Stack
-
-- **Frontend**: Next.js 14, React 18, TypeScript
-- **Styling**: Tailwind CSS
-- **Database**: MongoDB with Mongoose ODM
-- **Authentication**: NextAuth.js with Google OAuth
-- **PDF Generation**: pdf-lib and react-pdf
-- **Payment Processing**: Stripe
-- **Email Service**: Resend
-- **Deployment**: Vercel
-
-## 📋 Prerequisites
-
-Before running this application, make sure you have:
-
-- Node.js 18+ installed
-- MongoDB database (local or cloud)
-- Google OAuth credentials
-- Stripe account and API keys
-- Resend account and API key
-
-## 🚀 Quick Start
-
-1. **Clone the repository**
-   ```bash
-   git clone <repository-url>
-   cd invoicely
-   ```
-
-2. **Install dependencies**
-   ```bash
-   npm install
-   ```
-
-3. **Set up environment variables**
-   Create a `.env.local` file in the root directory:
-   ```env
-   # Database
-   MONGODB_URI=your_mongodb_connection_string
-   
-   # NextAuth
-   NEXTAUTH_URL=http://localhost:3000
-   NEXTAUTH_SECRET=your_nextauth_secret
-   
-   # Google OAuth
-   GOOGLE_CLIENT_ID=your_google_client_id
-   GOOGLE_CLIENT_SECRET=your_google_client_secret
-   
-   # Stripe
-   STRIPE_SECRET_KEY=your_stripe_secret_key
-   STRIPE_PUBLISHABLE_KEY=your_stripe_publishable_key
-   STRIPE_WEBHOOK_SECRET=your_stripe_webhook_secret
-   
-   # Resend
-   RESEND_API_KEY=your_resend_api_key
-   FROM_EMAIL=your_verified_email@domain.com
-   ```
-
-4. **Run the development server**
-   ```bash
-   npm run dev
-   ```
-
-5. **Open your browser**
-   Navigate to [http://localhost:3000](http://localhost:3000)
-
-## 📁 Project Structure
-
-```
-invoicely/
-├── app/                    # Next.js app directory
-│   ├── api/               # API routes
-│   │   ├── analytics/     # Analytics endpoints
-│   │   ├── auth/          # Authentication routes
-│   │   ├── clients/       # Client management
-│   │   ├── invoices/      # Invoice management
-│   │   ├── payments/      # Payment processing
-│   │   └── webhooks/      # Webhook handlers
-│   ├── auth/              # Authentication pages
-│   ├── clients/           # Client pages
-│   ├── dashboard/         # Dashboard
-│   ├── invoices/          # Invoice pages
-│   └── analytics/         # Analytics page
-├── components/            # Reusable components
-├── lib/                   # Utility libraries
-├── models/                # Mongoose models
-└── public/                # Static assets
-```
-
-## 🔧 Configuration
-
-### Google OAuth Setup
-
-1. Go to [Google Cloud Console](https://console.cloud.google.com/)
-2. Create a new project or select existing one
-3. Enable Google+ API
-4. Create OAuth 2.0 credentials
-5. Add authorized redirect URIs:
-   - `http://localhost:3000/api/auth/callback/google` (development)
-   - `https://your-domain.com/api/auth/callback/google` (production)
-
-### Stripe Setup
-
-1. Create a Stripe account
-2. Get your API keys from the dashboard
-3. Set up webhook endpoints for payment events
-4. Configure webhook secret
-
-### Resend Email Setup
-
-1. Create a Resend account
-2. Get your API key
-3. Verify your domain or use sandbox email
-4. See `EMAIL_SETUP.md` for detailed instructions
-
-## 🚀 Deployment
-
-### Deploy to Vercel
-
-1. Push your code to GitHub
-2. Connect your repository to Vercel
-3. Set environment variables in Vercel dashboard
-4. Deploy
-
-### Environment Variables for Production
-
-Make sure to update these for production:
-
-- `NEXTAUTH_URL`: Your production domain
-- `GOOGLE_CLIENT_ID`: Add production redirect URI
-- `STRIPE_WEBHOOK_SECRET`: Production webhook secret
-- `FROM_EMAIL`: Verified domain email
-
-## 📊 Features Overview
-
-### Invoice Management
-- Create professional invoices with custom branding
-- Add multiple line items with tax calculations
-- Generate PDF invoices automatically
-- Track invoice status (draft, sent, paid)
-
-### Client Management
-- Store client information securely
-- Manage multiple clients
-- View client invoice history
-
-### Payment Processing
-- Stripe integration for secure payments
-- Automatic invoice status updates
-- Payment confirmation emails
-
-### Email Automation
-- Send invoices directly to clients
-- PDF attachments included
-- Email delivery tracking
-- Payment reminder system
-
-### Analytics Dashboard
-- Revenue tracking
-- Invoice statistics
-- Payment analytics
-- Client insights
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
-
-## 📄 License
-
-This project is licensed under the MIT License.
-
-## 🆘 Support
-
-For support and questions:
-- Create an issue in the repository
-- Check the documentation
-- Review the setup guides
-
-<!-- Trigger redeploy -->
+A full-stack modern invoice management and billing SaaS application built with Next.js 14, **Supabase (PostgreSQL)**, **Brevo (Sendinblue)** email automation, and **NPCI UPI Instant Payment Integration** with **0% gateway fees**.
 
 ---
 
-Built with ❤️ using Next.js, TypeScript, and Tailwind CSS 
+## 🚀 Key Features
+
+- **⚡ Instant NPCI UPI Payment Engine**:
+  - Dynamic QR codes generated on-the-fly for any Indian Rupee (₹) invoice balance.
+  - Compatible with Google Pay, PhonePe, Paytm, BHIM, CRED, and all Indian banking apps.
+  - Direct 1-tap mobile deep-links for seamless checkout on smartphones.
+  - Option to upload custom standalone printed merchant QR codes.
+  - Scannable UPI QR codes embedded directly on downloadable PDF receipts.
+- **🌐 Public Client Payment Portal (`/pay/[id]`)**:
+  - Secure, no-auth payment link for external clients who receive invoices via email or message.
+  - Real-time invoice review, line-item breakdown, UPI payment confirmation, card checkout, and PDF receipt download.
+- **📧 Brevo (Sendinblue) Transactional Emails**:
+  - Dispatches professional HTML invoice emails & payment reminders (300 free emails/day).
+  - High-conversion **"View & Pay Invoice"** button linking directly to the client payment portal.
+  - Attaches high-resolution base64 PDF receipts.
+  - Adaptive sender identity (displays the logged-in user's name with direct `replyTo` support).
+- **🕒 Transaction History & Audit Trail (`/history`)**:
+  - Dedicated financial ledger tracking all settled invoices, amounts, timestamps, and payment methods.
+  - Brevo email delivery audit logs with message IDs.
+  - Search, date filtering (`All Time`, `Last 30 Days`, `Last 7 Days`), and 1-click **CSV Export**.
+- **⚙️ Profile & Payment Settings (`/settings`)**:
+  - Custom UPI ID (VPA) management with quick-handle shortcuts (`@oksbi`, `@okhdfcbank`, `@paytm`, `@ybl`).
+  - Profile photo / avatar uploader.
+  - Business profile details (company name, phone number, tax location).
+  - Live interactive client payment preview card.
+- **📊 Analytics & Overview Dashboard**:
+  - Real-time revenue metrics, status distributions, top client rankings, and zero-layout-shift skeleton loaders.
+- **🔐 1-Click Demo & NextAuth Authentication**:
+  - 1-click instant demo access with optional UPI handle onboarding.
+  - Google OAuth integration support.
+
+---
+
+## 🛠️ Tech Stack
+
+| Layer | Technology |
+|---|---|
+| **Framework** | [Next.js 14 (App Router)](https://nextjs.org/) + React 18 |
+| **Language** | TypeScript |
+| **Styling** | Vanilla CSS + Tailwind CSS |
+| **Database** | [Supabase (PostgreSQL)](https://supabase.com/) |
+| **Email Service** | [Brevo (Sendinblue)](https://www.brevo.com/) (REST API & SMTP Relay) |
+| **UPI Payments** | Standard NPCI UPI URI Specification + `qrcode` engine |
+| **PDF Engine** | `pdf-lib` |
+| **Authentication** | [NextAuth.js](https://next-auth.js.org/) |
+
+---
+
+## 💳 How UPI Payments Work
+
+- **Where does the money go?**
+  - The money transfers **instantly and directly into your bank account** linked to your UPI ID (configured in Settings or defaulting to `NEXT_PUBLIC_DEFAULT_UPI_ID`).
+- **Fees**: **0% Gateway Fees** (100% direct bank-to-bank settlement).
+- **Client Experience**: The client visits the secure payment link (`/pay/[id]`), scans the dynamic QR code on desktop or taps "Open in UPI App" on mobile. Their Google Pay / PhonePe / Paytm app opens with your payee name and exact invoice amount pre-filled.
+- **Custom QR Code**: Users can upload their own static merchant/personal QR code image in `/settings` if they prefer.
+
+---
+
+## 📦 Getting Started Locally
+
+### 1. Clone & Install Dependencies
+```bash
+git clone https://github.com/your-username/invoice-generator.git
+cd invoice-generator
+npm install
+```
+
+### 2. Configure Environment Variables
+Create `.env.local` in the root directory:
+```env
+# NextAuth Configuration
+NEXTAUTH_URL=http://localhost:3000
+NEXTAUTH_SECRET=invoicely_super_secure_secret_key_123
+
+# Supabase (PostgreSQL)
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
+
+# Brevo (Sendinblue) Email
+BREVO_API_KEY=xsmtpsib-...
+BREVO_SMTP_LOGIN=ba9960001@smtp-brevo.com
+BREVO_SENDER_EMAIL=your-verified-email@gmail.com
+BREVO_SENDER_NAME="Your Name or Business"
+
+# UPI Payments
+NEXT_PUBLIC_DEFAULT_UPI_ID=yourname@oksbi
+```
+
+### 3. Run the Supabase SQL Schema
+Copy and run the contents of [`supabase_schema.sql`](./supabase_schema.sql) in your **Supabase SQL Editor** to create the tables (`users`, `clients`, `invoices`) and indexes.
+
+### 4. Start the Development Server
+```bash
+npm run dev
+```
+Open **`http://localhost:3000`** in your browser.
+
+---
+
+## 🌐 Deploying to Vercel (Production)
+
+1. Push your repository to GitHub:
+   ```bash
+   git add .
+   git commit -m "Deploy Invoicely to production"
+   git push origin main
+   ```
+2. Go to **[Vercel Dashboard](https://vercel.com/)** $\rightarrow$ **"Add New Project"** $\rightarrow$ Import your repo.
+3. In **Environment Variables**, paste all the keys from your `.env.local` (set `NEXTAUTH_URL` to your production domain `https://your-app.vercel.app`).
+4. Click **Deploy**.
+
+---
+
+## 📄 License
+MIT License © 2026 Invoicely Team.

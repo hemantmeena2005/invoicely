@@ -3,8 +3,19 @@
 import { useState, useEffect } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import DashboardLayout from '@/components/DashboardLayout'
-import { ArrowLeftIcon, PencilIcon, EnvelopeIcon, PhoneIcon, BuildingOfficeIcon, MapPinIcon } from '@heroicons/react/24/outline'
+import { 
+  ArrowLeftIcon, 
+  PencilIcon, 
+  EnvelopeIcon, 
+  PhoneIcon, 
+  BuildingOffice2Icon, 
+  MapPinIcon,
+  DocumentPlusIcon,
+  CalendarIcon,
+  UserIcon
+} from '@heroicons/react/24/outline'
 import Link from 'next/link'
+import { Skeleton } from '@/components/ui/Skeleton'
 
 interface Client {
   _id: string
@@ -25,6 +36,21 @@ interface Client {
 export default function ClientViewPage() {
   const [client, setClient] = useState<Client | null>(null)
   const [loading, setLoading] = useState(true)
+  const [editing, setEditing] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [formData, setFormData] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    company: '',
+    address: {
+      street: '',
+      city: '',
+      state: '',
+      zipCode: '',
+      country: '',
+    }
+  })
   const router = useRouter()
   const params = useParams()
   const clientId = params.id as string
@@ -39,6 +65,19 @@ export default function ClientViewPage() {
       if (response.ok) {
         const data = await response.json()
         setClient(data)
+        setFormData({
+          name: data.name || '',
+          email: data.email || '',
+          phone: data.phone || '',
+          company: data.company || '',
+          address: {
+            street: data.address?.street || '',
+            city: data.address?.city || '',
+            state: data.address?.state || '',
+            zipCode: data.address?.zipCode || '',
+            country: data.address?.country || '',
+          }
+        })
       } else {
         router.push('/clients')
       }
@@ -50,179 +89,238 @@ export default function ClientViewPage() {
     }
   }
 
+  const handleUpdate = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      const response = await fetch(`/api/clients/${clientId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData),
+      })
+      if (response.ok) {
+        const updated = await response.json()
+        setClient(updated)
+        setEditing(false)
+      }
+    } catch (error) {
+      console.error('Error updating client:', error)
+    } finally {
+      setSaving(false)
+    }
+  }
+
   if (loading) {
     return (
       <DashboardLayout>
-        <div className="flex items-center justify-center h-64">
-          <div className="text-gray-500">Loading client...</div>
+        <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
+          <Skeleton className="h-6 w-32" />
+          <div className="card p-6 space-y-4">
+            <Skeleton className="h-16 w-16 rounded-2xl" />
+            <Skeleton className="h-8 w-48" />
+            <Skeleton className="h-32 w-full" />
+          </div>
         </div>
       </DashboardLayout>
     )
   }
 
-  if (!client) {
-    return (
-      <DashboardLayout>
-        <div className="text-center py-12">
-          <p className="text-gray-500">Client not found</p>
-          <Link href="/clients" className="btn-primary mt-4">
-            Back to Clients
-          </Link>
-        </div>
-      </DashboardLayout>
-    )
-  }
-
-  const formatAddress = () => {
-    const { address } = client
-    if (!address) return 'No address provided'
-    
-    const parts = [
-      address.street,
-      address.city,
-      address.state,
-      address.zipCode,
-      address.country
-    ].filter(Boolean)
-    
-    return parts.length > 0 ? parts.join(', ') : 'No address provided'
-  }
+  if (!client) return null
 
   return (
     <DashboardLayout>
-      <div className="max-w-2xl mx-auto">
+      <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
         {/* Header */}
-        <div className="mb-6">
-          <Link href="/clients" className="inline-flex items-center text-sm text-gray-500 hover:text-gray-700 mb-4">
-            <ArrowLeftIcon className="h-4 w-4 mr-1" />
-            Back to Clients
-          </Link>
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">{client.name}</h1>
-              <p className="text-gray-600">Client Information</p>
-            </div>
-            <div className="mt-4 sm:mt-0">
-              <Link
-                href={`/clients/${clientId}/edit`}
-                className="btn-primary inline-flex items-center"
-              >
-                <PencilIcon className="h-5 w-5 mr-2" />
-                Edit Client
-              </Link>
-            </div>
-          </div>
-        </div>
-
-        {/* Client Information */}
-        <div className="card">
-          <div className="px-6 py-4 border-b border-gray-200">
-            <h2 className="text-lg font-medium text-gray-900">Contact Information</h2>
-          </div>
-          
-          <div className="p-6 space-y-6">
-            {/* Basic Info */}
-            <div className="flex items-start space-x-4">
-              <div className="flex-shrink-0">
-                <div className="h-16 w-16 bg-primary-100 rounded-full flex items-center justify-center">
-                  <span className="text-xl font-bold text-primary-600">
-                    {client.name.charAt(0).toUpperCase()}
-                  </span>
-                </div>
-              </div>
-              <div className="flex-1 min-w-0">
-                <h3 className="text-lg font-medium text-gray-900">{client.name}</h3>
-                {client.company && (
-                  <p className="text-sm text-gray-500 flex items-center mt-1">
-                    <BuildingOfficeIcon className="h-4 w-4 mr-2" />
-                    {client.company}
-                  </p>
-                )}
-                <p className="text-sm text-gray-500 flex items-center mt-1">
-                  <EnvelopeIcon className="h-4 w-4 mr-2" />
-                  {client.email}
-                </p>
-                {client.phone && (
-                  <p className="text-sm text-gray-500 flex items-center mt-1">
-                    <PhoneIcon className="h-4 w-4 mr-2" />
-                    {client.phone}
-                  </p>
-                )}
-              </div>
-            </div>
-
-            {/* Address */}
-            <div className="border-t border-gray-200 pt-6">
-              <h4 className="text-sm font-medium text-gray-900 mb-3 flex items-center">
-                <MapPinIcon className="h-4 w-4 mr-2" />
-                Address
-              </h4>
-              <p className="text-sm text-gray-600">
-                {formatAddress()}
-              </p>
-            </div>
-
-            {/* Additional Info */}
-            <div className="border-t border-gray-200 pt-6">
-              <h4 className="text-sm font-medium text-gray-900 mb-3">Additional Information</h4>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-                <div>
-                  <span className="text-gray-500">Client since:</span>
-                  <p className="text-gray-900">
-                    {new Date(client.createdAt).toLocaleDateString()}
-                  </p>
-                </div>
-                <div>
-                  <span className="text-gray-500">Client ID:</span>
-                  <p className="text-gray-900 font-mono text-xs">
-                    {client._id}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Quick Actions */}
-        <div className="mt-6">
-          <h3 className="text-lg font-medium text-gray-900 mb-4">Quick Actions</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Link
-              href={`/invoices/new?clientId=${clientId}`}
-              className="card p-4 hover:shadow-lg transition-shadow duration-200"
-            >
-              <div className="flex items-center">
-                <div className="flex-shrink-0 bg-primary-100 rounded-lg p-3">
-                  <svg className="h-6 w-6 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                </div>
-                <div className="ml-4">
-                  <h4 className="text-sm font-medium text-gray-900">Create Invoice</h4>
-                  <p className="text-sm text-gray-600">Generate a new invoice for this client</p>
-                </div>
-              </div>
-            </Link>
-
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
             <Link
               href="/clients"
-              className="card p-4 hover:shadow-lg transition-shadow duration-200"
+              className="inline-flex items-center text-xs font-semibold text-slate-500 hover:text-slate-800 mb-2 transition-colors"
             >
-              <div className="flex items-center">
-                <div className="flex-shrink-0 bg-gray-100 rounded-lg p-3">
-                  <svg className="h-6 w-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                  </svg>
-                </div>
-                <div className="ml-4">
-                  <h4 className="text-sm font-medium text-gray-900">View All Clients</h4>
-                  <p className="text-sm text-gray-600">Return to the clients list</p>
-                </div>
-              </div>
+              <ArrowLeftIcon className="h-3.5 w-3.5 mr-1" />
+              Back to Clients
             </Link>
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+              {client.name}
+            </h1>
+            <p className="text-slate-500 text-sm mt-0.5">Client Profile & Contact Details</p>
+          </div>
+
+          <div className="flex items-center gap-2.5">
+            <Link
+              href={`/invoices/new?clientId=${client._id}`}
+              className="btn-primary text-xs py-2 px-3.5"
+            >
+              <DocumentPlusIcon className="h-4 w-4 mr-1.5" />
+              Create Invoice
+            </Link>
+            <button
+              onClick={() => setEditing(!editing)}
+              className="btn-secondary text-xs py-2 px-3.5"
+            >
+              <PencilIcon className="h-3.5 w-3.5 mr-1.5" />
+              {editing ? 'Cancel Edit' : 'Edit Profile'}
+            </button>
           </div>
         </div>
+
+        {editing ? (
+          <form onSubmit={handleUpdate} className="card p-6 space-y-6">
+            <h2 className="text-base font-bold text-slate-900 border-b border-slate-100 pb-3">
+              Edit Client Information
+            </h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold uppercase text-slate-600 mb-1">Full Name</label>
+                <input
+                  type="text"
+                  value={formData.name}
+                  onChange={(e) => setFormData(p => ({ ...p, name: e.target.value }))}
+                  className="input-field text-xs"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase text-slate-600 mb-1">Email</label>
+                <input
+                  type="email"
+                  value={formData.email}
+                  onChange={(e) => setFormData(p => ({ ...p, email: e.target.value }))}
+                  className="input-field text-xs"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase text-slate-600 mb-1">Company</label>
+                <input
+                  type="text"
+                  value={formData.company}
+                  onChange={(e) => setFormData(p => ({ ...p, company: e.target.value }))}
+                  className="input-field text-xs"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase text-slate-600 mb-1">Phone</label>
+                <input
+                  type="tel"
+                  value={formData.phone}
+                  onChange={(e) => setFormData(p => ({ ...p, phone: e.target.value }))}
+                  className="input-field text-xs"
+                />
+              </div>
+            </div>
+
+            <div className="pt-2 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setEditing(false)}
+                className="btn-secondary text-xs py-2 px-4"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={saving}
+                className="btn-primary text-xs py-2 px-5"
+              >
+                {saving ? 'Saving...' : 'Save Changes'}
+              </button>
+            </div>
+          </form>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {/* Main Profile Info (2 cols) */}
+            <div className="md:col-span-2 card p-6 space-y-6">
+              <div className="flex items-center gap-4 pb-6 border-b border-slate-100">
+                <div className="h-16 w-16 rounded-2xl bg-gradient-to-br from-primary-500 to-indigo-600 text-white font-extrabold text-2xl flex items-center justify-center shadow-md shadow-primary-500/20">
+                  {client.name.charAt(0).toUpperCase()}
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900">{client.name}</h2>
+                  {client.company && (
+                    <p className="text-sm font-medium text-slate-600">{client.company}</p>
+                  )}
+                  <p className="text-xs text-slate-400 mt-1 flex items-center gap-1">
+                    <CalendarIcon className="h-3.5 w-3.5" />
+                    Member since {new Date(client.createdAt).toLocaleDateString()}
+                  </p>
+                </div>
+              </div>
+
+              {/* Contact details */}
+              <div className="space-y-4">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                  Contact Information
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="p-4 rounded-xl bg-slate-50 border border-slate-100 space-y-1">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-500">
+                      <EnvelopeIcon className="h-4 w-4 text-primary-600" />
+                      Email Address
+                    </div>
+                    <p className="font-bold text-slate-800 text-sm break-all">{client.email}</p>
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-slate-50 border border-slate-100 space-y-1">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-500">
+                      <PhoneIcon className="h-4 w-4 text-primary-600" />
+                      Phone Number
+                    </div>
+                    <p className="font-bold text-slate-800 text-sm">
+                      {client.phone || <span className="text-slate-400 font-normal">Not provided</span>}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Address Details */}
+              <div className="space-y-3">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                  Billing Address
+                </h3>
+                <div className="p-4 rounded-xl bg-slate-50 border border-slate-100 flex items-start gap-3">
+                  <MapPinIcon className="h-5 w-5 text-primary-600 flex-shrink-0 mt-0.5" />
+                  <div className="text-sm text-slate-700">
+                    {client.address?.street ? (
+                      <div className="space-y-0.5 font-medium">
+                        <p>{client.address.street}</p>
+                        <p>
+                          {[client.address.city, client.address.state, client.address.zipCode].filter(Boolean).join(', ')}
+                        </p>
+                        {client.address.country && <p>{client.address.country}</p>}
+                      </div>
+                    ) : (
+                      <span className="text-slate-400">No address on file</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Quick Actions & Shortcut (1 col) */}
+            <div className="space-y-6">
+              <div className="card p-6 space-y-4">
+                <h3 className="text-base font-bold text-slate-900 border-b border-slate-100 pb-3">
+                  Quick Actions
+                </h3>
+                <div className="space-y-2">
+                  <Link
+                    href={`/invoices/new?clientId=${client._id}`}
+                    className="btn-primary w-full text-xs py-2.5 flex items-center justify-center gap-1.5"
+                  >
+                    <DocumentPlusIcon className="h-4 w-4" />
+                    New Invoice for {client.name.split(' ')[0]}
+                  </Link>
+                  <Link
+                    href="/invoices"
+                    className="btn-secondary w-full text-xs py-2.5 flex items-center justify-center"
+                  >
+                    View All Invoices
+                  </Link>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </DashboardLayout>
   )
-} 
+}

@@ -13,7 +13,13 @@ const UserSchema = new mongoose.Schema({
   image: {
     type: String,
   },
-  stripeCustomerId: {
+  upiId: {
+    type: String,
+  },
+  upiName: {
+    type: String,
+  },
+  upiQrCode: {
     type: String,
   },
   createdAt: {

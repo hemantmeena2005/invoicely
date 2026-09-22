@@ -1,35 +1,39 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/lib/auth';
-import dbConnect from '@/lib/db';
-import Invoice from '@/models/Invoice';
-import User from '@/models/User';
+import { getSessionUser } from '@/lib/authHelper';
+import { supabase } from '@/lib/supabase';
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import { format } from 'date-fns';
+import { generateUpiQrPngBuffer } from '@/lib/upiHelper';
 
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.email) {
+    const user = await getSessionUser();
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    await dbConnect();
+    const { data: invoice, error } = await supabase
+      .from('invoices')
+      .select('*, clientId:clients(name, email, address, phone, company)')
+      .eq('id', params.id)
+      .eq('user_id', user.id)
+      .single();
     
-    const user = await User.findOne({ email: session.user.email });
-    if (!user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 });
-    }
-
-    const invoice = await Invoice.findOne({ _id: params.id, userId: user._id })
-      .populate('clientId', 'name email address phone company');
-    
-    if (!invoice) {
-      return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
-    }
+    const inv = {
+      ...invoice,
+      invoiceNumber: invoice.invoice_number || invoice.invoiceNumber || 'INV-0000',
+      issueDate: invoice.issue_date || invoice.issueDate || new Date().toISOString(),
+      dueDate: invoice.due_date || invoice.dueDate || new Date().toISOString(),
+      subtotal: Number(invoice.subtotal || 0),
+      taxRate: Number(invoice.tax_rate || invoice.taxRate || 0),
+      taxAmount: Number(invoice.tax_amount || invoice.taxAmount || 0),
+      total: Number(invoice.total || 0),
+      items: Array.isArray(invoice.items) ? invoice.items : [],
+      clientId: (Array.isArray(invoice.clientId) ? invoice.clientId[0] : invoice.clientId) || {},
+    };
 
     // Create PDF
     const pdfDoc = await PDFDocument.create();
@@ -58,7 +62,7 @@ export async function GET(
     yPosition -= 40;
 
     // Invoice details
-    page.drawText(`Invoice #: ${invoice.invoiceNumber}`, {
+    page.drawText(`Invoice #: ${inv.invoiceNumber}`, {
       x: 50,
       y: yPosition,
       size: 12,
@@ -66,7 +70,7 @@ export async function GET(
       color: primaryColor,
     });
 
-    page.drawText(`Date: ${format(new Date(invoice.issueDate), 'MMM dd, yyyy')}`, {
+    page.drawText(`Date: ${format(new Date(inv.issueDate), 'MMM dd, yyyy')}`, {
       x: 200,
       y: yPosition,
       size: 12,
@@ -74,7 +78,7 @@ export async function GET(
       color: primaryColor,
     });
 
-    page.drawText(`Due Date: ${format(new Date(invoice.dueDate), 'MMM dd, yyyy')}`, {
+    page.drawText(`Due Date: ${format(new Date(inv.dueDate), 'MMM dd, yyyy')}`, {
       x: 350,
       y: yPosition,
       size: 12,
@@ -123,7 +127,7 @@ export async function GET(
     });
 
     yPosition -= 20;
-    page.drawText(invoice.clientId.name, {
+    page.drawText(inv.clientId.name || 'Valued Client', {
       x: 50,
       y: yPosition,
       size: 12,
@@ -132,17 +136,19 @@ export async function GET(
     });
 
     yPosition -= 15;
-    page.drawText(invoice.clientId.email, {
-      x: 50,
-      y: yPosition,
-      size: 12,
-      font: helveticaFont,
-      color: primaryColor,
-    });
+    if (inv.clientId.email) {
+      page.drawText(inv.clientId.email, {
+        x: 50,
+        y: yPosition,
+        size: 12,
+        font: helveticaFont,
+        color: primaryColor,
+      });
+    }
 
-    if (invoice.clientId.company) {
+    if (inv.clientId.company) {
       yPosition -= 15;
-      page.drawText(invoice.clientId.company, {
+      page.drawText(inv.clientId.company, {
         x: 50,
         y: yPosition,
         size: 12,
@@ -190,8 +196,8 @@ export async function GET(
     yPosition -= 30;
 
     // Items
-    invoice.items.forEach((item: any) => {
-      page.drawText(item.description, {
+    inv.items.forEach((item: any) => {
+      page.drawText(String(item.description || 'Item'), {
         x: 50,
         y: yPosition,
         size: 10,
@@ -199,7 +205,7 @@ export async function GET(
         color: primaryColor,
       });
 
-      page.drawText(item.quantity.toString(), {
+      page.drawText(String(item.quantity || 1), {
         x: 300,
         y: yPosition,
         size: 10,
@@ -207,7 +213,7 @@ export async function GET(
         color: primaryColor,
       });
 
-      page.drawText(`$${item.rate.toFixed(2)}`, {
+      page.drawText(`Rs. ${Number(item.rate || 0).toFixed(2)}`, {
         x: 350,
         y: yPosition,
         size: 10,
@@ -215,7 +221,7 @@ export async function GET(
         color: primaryColor,
       });
 
-      page.drawText(`$${item.amount.toFixed(2)}`, {
+      page.drawText(`Rs. ${Number(item.amount || 0).toFixed(2)}`, {
         x: 450,
         y: yPosition,
         size: 10,
@@ -229,7 +235,7 @@ export async function GET(
     yPosition -= 20;
 
     // Totals
-    page.drawText(`Subtotal: $${invoice.subtotal.toFixed(2)}`, {
+    page.drawText(`Subtotal: Rs. ${inv.subtotal.toFixed(2)}`, {
       x: 350,
       y: yPosition,
       size: 12,
@@ -238,7 +244,7 @@ export async function GET(
     });
 
     yPosition -= 20;
-    page.drawText(`Tax (${invoice.taxRate}%): $${invoice.taxAmount.toFixed(2)}`, {
+    page.drawText(`Tax (${inv.taxRate}%): Rs. ${inv.taxAmount.toFixed(2)}`, {
       x: 350,
       y: yPosition,
       size: 12,
@@ -247,7 +253,7 @@ export async function GET(
     });
 
     yPosition -= 20;
-    page.drawText(`Total: $${invoice.total.toFixed(2)}`, {
+    page.drawText(`Total: Rs. ${inv.total.toFixed(2)}`, {
       x: 350,
       y: yPosition,
       size: 14,
@@ -256,7 +262,7 @@ export async function GET(
     });
 
     // Notes
-    if (invoice.notes) {
+    if (inv.notes) {
       yPosition -= 40;
       page.drawText('Notes:', {
         x: 50,
@@ -297,12 +303,83 @@ export async function GET(
       });
     }
 
+    // UPI Payment QR Code Section at the bottom
+    try {
+      const upiId = user.upi_id || process.env.NEXT_PUBLIC_DEFAULT_UPI_ID || 'hemantmeena2005@oksbi';
+      const payeeName = user.upi_name || user.name || 'Hemant Meena';
+      let upiImage: any = null;
+
+      // If user uploaded a custom QR code, embed it
+      if (user.upi_qr_code && user.upi_qr_code.startsWith('data:image')) {
+        try {
+          const isJpg = user.upi_qr_code.includes('image/jpeg') || user.upi_qr_code.includes('image/jpg');
+          const base64Data = user.upi_qr_code.replace(/^data:image\/\w+;base64,/, '');
+          const imgBuffer = Buffer.from(base64Data, 'base64');
+          upiImage = isJpg ? await pdfDoc.embedJpg(imgBuffer) : await pdfDoc.embedPng(imgBuffer);
+        } catch (customErr) {
+          console.error('Failed to embed custom QR image, falling back to dynamic generator:', customErr);
+        }
+      }
+
+      // If no custom image or embedding failed, generate dynamic NPCI QR
+      if (!upiImage) {
+        const upiBuffer = await generateUpiQrPngBuffer({
+          upiId,
+          payeeName,
+          amount: inv.total,
+          invoiceNumber: inv.invoiceNumber,
+        }, 160);
+        upiImage = await pdfDoc.embedPng(upiBuffer);
+      }
+
+      page.drawImage(upiImage, {
+        x: 50,
+        y: 50,
+        width: 75,
+        height: 75,
+      });
+
+      page.drawText('Scan & Pay via UPI (Zero Fees)', {
+        x: 135,
+        y: 105,
+        size: 9,
+        font: helveticaBold,
+        color: rgb(0.25, 0.2, 0.8),
+      });
+
+      page.drawText(`UPI ID: ${upiId}`, {
+        x: 135,
+        y: 90,
+        size: 8,
+        font: helveticaFont,
+        color: primaryColor,
+      });
+
+      page.drawText('Supported Apps: Google Pay, PhonePe, Paytm, BHIM, CRED', {
+        x: 135,
+        y: 75,
+        size: 7.5,
+        font: helveticaFont,
+        color: secondaryColor,
+      });
+
+      page.drawText(`Amount: Rs. ${inv.total.toFixed(2)}`, {
+        x: 135,
+        y: 60,
+        size: 8.5,
+        font: helveticaBold,
+        color: rgb(0.05, 0.55, 0.25),
+      });
+    } catch (qrErr) {
+      console.error('Error embedding UPI QR in PDF:', qrErr);
+    }
+
     const pdfBytes = await pdfDoc.save();
 
     return new NextResponse(pdfBytes, {
       headers: {
         'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename="invoice-${invoice.invoiceNumber}.pdf"`,
+        'Content-Disposition': `attachment; filename="invoice-${inv.invoiceNumber}.pdf"`,
       },
     });
   } catch (error) {

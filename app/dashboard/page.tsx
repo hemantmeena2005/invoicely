@@ -7,64 +7,66 @@ import {
   DocumentTextIcon, 
   UserGroupIcon, 
   ClockIcon,
-  ExclamationTriangleIcon,
   ChartBarIcon,
+  ArrowTrendingUpIcon,
+  PlusIcon,
+  EnvelopeIcon,
+  EyeIcon,
+  PaperAirplaneIcon,
   CheckCircleIcon,
-  EnvelopeIcon
+  ExclamationCircleIcon,
 } from '@heroicons/react/24/outline'
 import Link from 'next/link'
-import dbConnect from '@/lib/db'
-import Invoice from '@/models/Invoice'
-import Client from '@/models/Client'
-import User from '@/models/User'
-import { useState, useEffect } from 'react'
-import { format } from 'date-fns'
+import { getSessionUser } from '@/lib/authHelper'
+import { supabase } from '@/lib/supabase'
+import { StatusBadge } from '@/components/ui/Badge'
+import { DashboardLoadingSkeleton } from '@/components/ui/Skeleton'
 
 async function getDashboardData() {
-  const session = await getServerSession(authOptions)
-  if (!session?.user?.email) return null
+  const user = await getSessionUser()
+  if (!user) return null
 
   try {
-    await dbConnect()
-    
-    // Get user
-    const user = await User.findOne({ email: session.user.email })
-    if (!user) return null
+    const [invoicesRes, clientsRes] = await Promise.all([
+      supabase
+        .from('invoices')
+        .select('*, client:clients(name, email)')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(10),
+      supabase
+        .from('clients')
+        .select('*')
+        .eq('user_id', user.id),
+    ])
 
-    // Get all invoices for the user
-    const invoices = await Invoice.find({ userId: user._id })
-      .populate('clientId', 'name')
-      .sort({ createdAt: -1 })
-      .limit(10)
+    const invoices = invoicesRes.data || []
+    const clients = clientsRes.data || []
 
-    // Get all clients for the user
-    const clients = await Client.find({ userId: user._id })
-
-    // Calculate statistics
     const totalInvoices = invoices.length
     const totalClients = clients.length
     
     const paidInvoices = invoices.filter(inv => inv.status === 'paid')
     const pendingInvoices = invoices.filter(inv => inv.status === 'sent')
     const overdueInvoices = invoices.filter(inv => {
-      return inv.status === 'sent' && new Date(inv.dueDate) < new Date()
+      return inv.status === 'sent' && new Date(inv.due_date) < new Date()
     })
     
-    const totalRevenue = paidInvoices.reduce((sum, inv) => sum + inv.total, 0)
-    const pendingAmount = pendingInvoices.reduce((sum, inv) => sum + inv.total, 0)
-    const overdueAmount = overdueInvoices.reduce((sum, inv) => sum + inv.total, 0)
+    const totalRevenue = paidInvoices.reduce((sum, inv) => sum + (Number(inv.total) || 0), 0)
+    const pendingAmount = pendingInvoices.reduce((sum, inv) => sum + (Number(inv.total) || 0), 0)
+    const overdueAmount = overdueInvoices.reduce((sum, inv) => sum + (Number(inv.total) || 0), 0)
 
     // Get recent invoices for display
     const recentInvoices = invoices.slice(0, 5).map(invoice => ({
-      id: invoice._id.toString(),
-      invoiceNumber: invoice.invoiceNumber,
-      clientName: invoice.clientId.name,
-      amount: invoice.total,
+      id: invoice.id,
+      invoiceNumber: invoice.invoice_number,
+      clientName: invoice.client?.name || 'Unknown Client',
+      amount: Number(invoice.total) || 0,
       status: invoice.status,
-      dueDate: invoice.dueDate,
-      issueDate: invoice.issueDate,
-      emailStatus: invoice.emailStatus || 'not_sent',
-      lastEmailedAt: invoice.lastEmailedAt,
+      dueDate: invoice.due_date,
+      issueDate: invoice.issue_date,
+      emailStatus: invoice.email_status || 'not_sent',
+      lastEmailedAt: invoice.last_emailed_at,
     }))
 
     // Calculate monthly revenue for the last 6 months
@@ -75,11 +77,11 @@ async function getDashboardData() {
       const monthEnd = new Date(currentDate.getFullYear(), currentDate.getMonth() - i + 1, 0)
       
       const monthInvoices = paidInvoices.filter(inv => {
-        const paidDate = new Date(inv.paidAt || inv.updatedAt)
+        const paidDate = new Date(inv.paid_at || inv.updated_at || inv.created_at)
         return paidDate >= monthStart && paidDate <= monthEnd
       })
       
-      const monthRevenue = monthInvoices.reduce((sum, inv) => sum + inv.total, 0)
+      const monthRevenue = monthInvoices.reduce((sum, inv) => sum + (Number(inv.total) || 0), 0)
       monthlyRevenue.push({
         month: monthStart.toLocaleDateString('en-US', { month: 'short' }),
         revenue: monthRevenue
@@ -89,14 +91,14 @@ async function getDashboardData() {
     // Get top clients by revenue
     const clientRevenue: { [key: string]: number } = {}
     paidInvoices.forEach(invoice => {
-      const clientName = invoice.clientId.name
-      clientRevenue[clientName] = (clientRevenue[clientName] || 0) + invoice.total
+      const clientName = invoice.client?.name || 'Unknown'
+      clientRevenue[clientName] = (clientRevenue[clientName] || 0) + (Number(invoice.total) || 0)
     })
     
     const topClients = Object.entries(clientRevenue)
       .map(([name, revenue]) => ({ name, revenue }))
       .sort((a, b) => b.revenue - a.revenue)
-      .slice(0, 5)
+      .slice(0, 4)
 
     // Email statistics
     const emailStats = {
@@ -109,24 +111,24 @@ async function getDashboardData() {
     const recentEmailActivity = []
 
     for (const invoice of invoices) {
-      if (invoice.emailStatus) {
+      if (invoice.email_status && invoice.email_status !== 'not_sent') {
         emailStats.totalSent++
-        if (invoice.emailStatus === 'delivered') {
+        if (invoice.email_status === 'delivered') {
           emailStats.delivered++
-        } else if (invoice.emailStatus === 'failed') {
+        } else if (invoice.email_status === 'failed') {
           emailStats.failed++
         } else {
           emailStats.notSent++
         }
       }
 
-      if (invoice.lastEmailedAt) {
+      if (invoice.last_emailed_at) {
         recentEmailActivity.push({
-          invoiceNumber: invoice.invoiceNumber,
-          clientName: invoice.clientId.name,
-          emailType: invoice.emailType || 'invoice',
-          status: invoice.emailStatus || 'sent',
-          sentAt: invoice.lastEmailedAt
+          invoiceNumber: invoice.invoice_number,
+          clientName: invoice.client?.name || 'Unknown',
+          emailType: 'invoice',
+          status: invoice.email_status || 'sent',
+          sentAt: invoice.last_emailed_at
         })
       }
     }
@@ -147,10 +149,11 @@ async function getDashboardData() {
       recentEmailActivity
     }
   } catch (error) {
-    console.error('Error fetching dashboard data:', error)
+    console.error('Error fetching dashboard data from Supabase:', error)
     return null
   }
 }
+
 
 export default async function Dashboard() {
   const session = await getServerSession(authOptions)
@@ -163,12 +166,7 @@ export default async function Dashboard() {
   if (!data) {
     return (
       <DashboardLayout>
-        <div className="flex items-center justify-center h-64">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto"></div>
-            <p className="mt-4 text-gray-600">Loading dashboard data...</p>
-          </div>
-        </div>
+        <DashboardLoadingSkeleton />
       </DashboardLayout>
     )
   }
@@ -176,446 +174,314 @@ export default async function Dashboard() {
   const stats = [
     {
       name: 'Total Revenue',
-      value: `$${data.totalRevenue.toLocaleString()}`,
+      value: `₹${data.totalRevenue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
       icon: CurrencyDollarIcon,
-      color: 'text-green-600',
-      bgColor: 'bg-green-100',
-      change: '+12%',
-      changeType: 'positive'
+      accent: 'from-emerald-500 to-teal-600',
+      bgGlow: 'bg-emerald-500/10 text-emerald-600 border-emerald-200/60',
+      change: `${data.paidInvoices} paid invoices`,
+      trend: '+12% vs last month',
+    },
+    {
+      name: 'Pending Amount',
+      value: `₹${data.pendingAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      icon: ClockIcon,
+      accent: 'from-indigo-500 to-primary-600',
+      bgGlow: 'bg-indigo-500/10 text-indigo-600 border-indigo-200/60',
+      change: `${data.pendingInvoices} awaiting payment`,
+      trend: 'Follow-ups recommended',
     },
     {
       name: 'Total Invoices',
       value: data.totalInvoices.toString(),
       icon: DocumentTextIcon,
-      color: 'text-blue-600',
-      bgColor: 'bg-blue-100',
-      change: `${data.paidInvoices} paid`,
-      changeType: 'neutral'
+      accent: 'from-blue-500 to-cyan-600',
+      bgGlow: 'bg-blue-500/10 text-blue-600 border-blue-200/60',
+      change: `${data.overdueInvoices} overdue`,
+      trend: 'Lifetime generated',
     },
     {
-      name: 'Total Clients',
+      name: 'Active Clients',
       value: data.totalClients.toString(),
       icon: UserGroupIcon,
-      color: 'text-purple-600',
-      bgColor: 'bg-purple-100',
-      change: '+2 this month',
-      changeType: 'positive'
-    },
-    {
-      name: 'Pending Amount',
-      value: `$${data.pendingAmount.toLocaleString()}`,
-      icon: ClockIcon,
-      color: 'text-orange-600',
-      bgColor: 'bg-orange-100',
-      change: `${data.pendingInvoices} invoices`,
-      changeType: 'neutral'
+      accent: 'from-purple-500 to-violet-600',
+      bgGlow: 'bg-purple-500/10 text-purple-600 border-purple-200/60',
+      change: 'Client directory',
+      trend: 'Recurring accounts',
     },
   ]
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'paid':
-        return 'bg-green-100 text-green-800'
-      case 'sent':
-        return 'bg-blue-100 text-blue-800'
-      case 'draft':
-        return 'bg-gray-100 text-gray-800'
-      case 'overdue':
-        return 'bg-red-100 text-red-800'
-      default:
-        return 'bg-gray-100 text-gray-800'
-    }
-  }
-
-  const getEmailStatusColor = (status: string) => {
-    switch (status) {
-      case 'delivered':
-        return 'bg-green-100 text-green-800'
-      case 'sent':
-        return 'bg-blue-100 text-blue-800'
-      case 'failed':
-        return 'bg-red-100 text-red-800'
-      default:
-        return 'bg-gray-100 text-gray-800'
-    }
-  }
-
-  const isOverdue = (dueDate: string) => {
-    return new Date(dueDate) < new Date() && new Date(dueDate).getTime() !== new Date().setHours(0, 0, 0, 0)
-  }
+  // Max value for visual bar chart calculation
+  const maxMonthlyRevenue = Math.max(...data.monthlyRevenue.map(m => m.revenue), 1000)
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
-        {/* Header */}
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-          <p className="text-gray-600">Welcome back! Here's what's happening with your business.</p>
+      <div className="space-y-8 animate-fade-in">
+        {/* Welcome Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+              Welcome back, {session?.user?.name?.split(' ')[0] || 'Hemant'} 👋
+            </h1>
+            <p className="text-slate-500 text-sm mt-1">
+              Here is what is happening with your invoices, clients, and payments today.
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <Link
+              href="/clients/new"
+              className="btn-secondary text-xs sm:text-sm py-2 px-3.5"
+            >
+              <UserGroupIcon className="h-4 w-4 mr-1.5" />
+              Add Client
+            </Link>
+            <Link
+              href="/invoices/new"
+              className="btn-primary text-xs sm:text-sm py-2 px-3.5"
+            >
+              <PlusIcon className="h-4 w-4 mr-1.5 stroke-[2.5]" />
+              New Invoice
+            </Link>
+          </div>
         </div>
 
-        {/* Stats */}
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
-          {stats.map((stat) => (
-            <div key={stat.name} className="card p-6">
+        {/* 4 Stat Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+          {stats.map((stat, i) => (
+            <div
+              key={stat.name}
+              className="card-hover p-6 relative overflow-hidden"
+            >
               <div className="flex items-center justify-between">
-                <div className="flex items-center">
-                  <div className={`flex-shrink-0 ${stat.bgColor} rounded-lg p-3`}>
-                    <stat.icon className={`h-6 w-6 ${stat.color}`} />
-                  </div>
-                  <div className="ml-4">
-                    <p className="text-sm font-medium text-gray-600">{stat.name}</p>
-                    <p className="text-2xl font-semibold text-gray-900">{stat.value}</p>
-                  </div>
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                  {stat.name}
+                </span>
+                <div className={`h-10 w-10 rounded-xl flex items-center justify-center border ${stat.bgGlow}`}>
+                  <stat.icon className="h-5 w-5" />
                 </div>
-                <div className="text-right">
-                  <p className={`text-sm font-medium ${
-                    stat.changeType === 'positive' ? 'text-green-600' : 
-                    stat.changeType === 'negative' ? 'text-red-600' : 'text-gray-600'
-                  }`}>
-                    {stat.change}
-                  </p>
+              </div>
+              <div className="mt-4">
+                <p className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
+                  {stat.value}
+                </p>
+                <div className="mt-2 flex items-center justify-between text-xs">
+                  <span className="font-medium text-slate-600">{stat.change}</span>
+                  <span className="text-emerald-600 font-semibold flex items-center gap-0.5">
+                    <ArrowTrendingUpIcon className="h-3.5 w-3.5" />
+                    {stat.trend}
+                  </span>
                 </div>
               </div>
             </div>
           ))}
         </div>
 
-        {/* Alerts */}
-        {data.overdueInvoices > 0 && (
-          <div className="card p-4 bg-red-50 border-red-200">
-            <div className="flex items-center">
-              <ExclamationTriangleIcon className="h-5 w-5 text-red-600 mr-3" />
+        {/* Chart & Top Clients Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Visual Revenue Bar Chart */}
+          <div className="lg:col-span-2 card p-6 flex flex-col justify-between">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100">
               <div>
-                <h3 className="text-sm font-medium text-red-800">
-                  {data.overdueInvoices} overdue invoice{data.overdueInvoices > 1 ? 's' : ''}
-                </h3>
-                <p className="text-sm text-red-700">
-                  Total overdue amount: ${data.overdueAmount.toLocaleString()}
-                </p>
+                <h3 className="text-base font-bold text-slate-900">Revenue Overview</h3>
+                <p className="text-xs text-slate-500 mt-0.5">Monthly revenue trends for the last 6 months</p>
+              </div>
+              <Link
+                href="/analytics"
+                className="text-xs font-semibold text-primary-600 hover:text-primary-700 flex items-center gap-1"
+              >
+                View Analytics &rarr;
+              </Link>
+            </div>
+
+            {/* Custom Interactive SVG / CSS Bar Chart */}
+            <div className="pt-6 pb-2">
+              <div className="h-56 flex items-end gap-3 sm:gap-6 justify-between px-2">
+                {data.monthlyRevenue.map((item, idx) => {
+                  const percentage = Math.max(Math.round((item.revenue / maxMonthlyRevenue) * 100), 8)
+                  return (
+                    <div key={idx} className="flex-1 flex flex-col items-center gap-2 group relative">
+                      {/* Tooltip on hover */}
+                      <div className="absolute -top-9 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none bg-slate-900 text-white text-[11px] font-bold py-1 px-2 rounded-lg shadow-lg whitespace-nowrap z-10">
+                        ₹{item.revenue.toLocaleString('en-IN')}
+                      </div>
+                      <div className="w-full bg-slate-100 rounded-xl h-44 flex items-end p-1 overflow-hidden">
+                        <div
+                          className="w-full bg-gradient-to-t from-primary-600 to-indigo-500 rounded-lg group-hover:from-primary-500 group-hover:to-indigo-400 transition-all duration-500 shadow-sm"
+                          style={{ height: `${percentage}%` }}
+                        />
+                      </div>
+                      <span className="text-xs font-bold text-slate-500 group-hover:text-slate-900 transition-colors">
+                        {item.month}
+                      </span>
+                    </div>
+                  )
+                })}
               </div>
             </div>
           </div>
-        )}
 
-        {/* Revenue Chart */}
-        <div className="card">
-          <div className="px-6 py-4 border-b border-gray-200">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-medium text-gray-900">Revenue Trend</h2>
-              <ChartBarIcon className="h-5 w-5 text-green-600" />
-            </div>
-          </div>
-          <div className="p-6">
-            <div className="flex items-end justify-between h-32">
-              {data.monthlyRevenue.map((month, index) => (
-                <div key={month.month} className="flex flex-col items-center">
-                  <div 
-                    className="bg-primary-600 rounded-t w-8 mb-2"
-                    style={{ 
-                      height: `${Math.max(10, (month.revenue / Math.max(...data.monthlyRevenue.map(m => m.revenue))) * 80)}px` 
-                    }}
-                  ></div>
-                  <span className="text-xs text-gray-600">{month.month}</span>
-                  <span className="text-xs font-medium text-gray-900">${month.revenue.toLocaleString()}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Top Clients */}
-        {data.topClients.length > 0 && (
-          <div className="card">
-            <div className="px-6 py-4 border-b border-gray-200">
-              <h2 className="text-lg font-medium text-gray-900">Top Clients by Revenue</h2>
-            </div>
-            <div className="divide-y divide-gray-200">
-              {data.topClients.map((client, index) => (
-                <div key={client.name} className="px-6 py-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center">
-                      <div className="flex-shrink-0 w-8 h-8 bg-primary-100 rounded-full flex items-center justify-center">
-                        <span className="text-sm font-medium text-primary-600">{index + 1}</span>
+          {/* Top Clients by Revenue */}
+          <div className="card p-6 flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+                <h3 className="text-base font-bold text-slate-900">Top Clients</h3>
+                <Link href="/clients" className="text-xs font-semibold text-primary-600 hover:text-primary-700">
+                  All Clients
+                </Link>
+              </div>
+              <div className="divide-y divide-slate-100 mt-2">
+                {data.topClients.length > 0 ? (
+                  data.topClients.map((client, index) => (
+                    <div key={index} className="py-3 flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="h-9 w-9 rounded-xl bg-slate-100 font-bold text-xs text-slate-700 flex items-center justify-center border border-slate-200">
+                          {client.name.charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-slate-800 truncate max-w-[120px]">{client.name}</p>
+                          <p className="text-[11px] text-slate-400">Rank #{index + 1}</p>
+                        </div>
                       </div>
-                      <div className="ml-4">
-                        <p className="text-sm font-medium text-gray-900">{client.name}</p>
-                      </div>
+                      <span className="text-sm font-bold text-slate-900">
+                        ₹{client.revenue.toLocaleString('en-IN')}
+                      </span>
                     </div>
-                    <div className="text-right">
-                      <p className="text-sm font-medium text-gray-900">
-                        ${client.revenue.toLocaleString()}
-                      </p>
-                    </div>
+                  ))
+                ) : (
+                  <div className="py-8 text-center text-xs text-slate-400">
+                    No paid client revenue recorded yet.
                   </div>
-                </div>
-              ))}
+                )}
+              </div>
             </div>
-          </div>
-        )}
 
-        {/* Recent Invoices */}
-        <div className="card">
-          <div className="px-6 py-4 border-b border-gray-200">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-medium text-gray-900">Recent Invoices</h2>
-              <Link href="/invoices" className="text-sm text-primary-600 hover:text-primary-500">
-                View all
+            <div className="pt-4 border-t border-slate-100">
+              <Link href="/clients/new" className="btn-secondary w-full text-xs py-2">
+                <PlusIcon className="h-3.5 w-3.5 mr-1" />
+                Register New Client
               </Link>
             </div>
           </div>
-          <div className="divide-y divide-gray-200">
+        </div>
+
+        {/* Recent Invoices & Email Activity */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Recent Invoices (2 cols) */}
+          <div className="lg:col-span-2 card p-6 space-y-4">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+              <div>
+                <h3 className="text-base font-bold text-slate-900">Recent Invoices</h3>
+                <p className="text-xs text-slate-500">Track recently dispatched client bills</p>
+              </div>
+              <Link href="/invoices" className="btn-secondary text-xs py-1.5 px-3">
+                View All Invoices
+              </Link>
+            </div>
+
             {data.recentInvoices.length > 0 ? (
-              data.recentInvoices.map((invoice) => (
-                <div key={invoice.id} className="px-6 py-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-4">
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-slate-100 text-left">
+                  <thead>
+                    <tr>
+                      <th className="table-th">Invoice</th>
+                      <th className="table-th">Client</th>
+                      <th className="table-th">Amount</th>
+                      <th className="table-th">Status</th>
+                      <th className="table-th">Due Date</th>
+                      <th className="table-th text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {data.recentInvoices.map((invoice) => (
+                      <tr key={invoice.id} className="hover:bg-slate-50/70 transition-colors">
+                        <td className="table-td font-semibold text-slate-900">
                           {invoice.invoiceNumber}
-                        </p>
-                        <p className="text-sm text-gray-500">{invoice.clientName}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center space-x-4">
-                      <span className="text-sm font-medium text-gray-900">
-                        ${invoice.amount.toLocaleString()}
-                      </span>
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(invoice.status)}`}>
-                        {invoice.status}
-                      </span>
-                      <span className="text-sm text-gray-500">
-                        Due {new Date(invoice.dueDate).toLocaleDateString()}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              ))
+                        </td>
+                        <td className="table-td font-medium text-slate-700">
+                          {invoice.clientName}
+                        </td>
+                        <td className="table-td font-bold text-slate-900">
+                          ₹{invoice.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </td>
+                        <td className="table-td">
+                          <StatusBadge status={invoice.status} pulse={invoice.status === 'sent'} />
+                        </td>
+                        <td className="table-td text-xs text-slate-500">
+                          {new Date(invoice.dueDate).toLocaleDateString()}
+                        </td>
+                        <td className="table-td text-right">
+                          <Link
+                            href={`/invoices/${invoice.id}`}
+                            className="inline-flex items-center gap-1 text-xs font-semibold text-primary-600 hover:text-primary-700 p-1 rounded-lg hover:bg-primary-50 transition-colors"
+                          >
+                            <EyeIcon className="h-4 w-4" />
+                            View
+                          </Link>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             ) : (
-              <div className="px-6 py-8 text-center">
-                <DocumentTextIcon className="mx-auto h-12 w-12 text-gray-400" />
-                <h3 className="mt-2 text-sm font-medium text-gray-900">No invoices yet</h3>
-                <p className="mt-1 text-sm text-gray-500">Get started by creating your first invoice.</p>
-                <div className="mt-6">
-                  <Link href="/invoices/new" className="btn btn-primary">
-                    Create Invoice
-                  </Link>
-                </div>
+              <div className="text-center py-10 space-y-3">
+                <DocumentTextIcon className="h-10 w-10 text-slate-300 mx-auto" />
+                <p className="text-sm font-semibold text-slate-700">No invoices generated yet</p>
+                <Link href="/invoices/new" className="btn-primary text-xs py-2 px-4">
+                  Create Your First Invoice
+                </Link>
               </div>
             )}
           </div>
-        </div>
 
-        {/* Quick Actions */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <Link href="/invoices/new" className="card p-6 hover:shadow-lg transition-shadow duration-200">
-            <div className="flex items-center">
-              <div className="flex-shrink-0 bg-primary-100 rounded-lg p-3">
-                <DocumentTextIcon className="h-6 w-6 text-primary-600" />
+          {/* Email Activity Widget (1 col) */}
+          <div className="card p-6 space-y-4 flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+                <div className="flex items-center gap-2">
+                  <EnvelopeIcon className="h-5 w-5 text-indigo-600" />
+                  <h3 className="text-base font-bold text-slate-900">Email Delivery</h3>
+                </div>
+                <span className="text-xs font-semibold text-slate-500">
+                  {data.emailStats.totalSent} sent
+                </span>
               </div>
-              <div className="ml-4">
-                <h3 className="text-lg font-medium text-gray-900">Create Invoice</h3>
-                <p className="text-sm text-gray-600">Generate a new invoice for your client</p>
-              </div>
-            </div>
-          </Link>
 
-          <Link href="/clients/new" className="card p-6 hover:shadow-lg transition-shadow duration-200">
-            <div className="flex items-center">
-              <div className="flex-shrink-0 bg-primary-100 rounded-lg p-3">
-                <UserGroupIcon className="h-6 w-6 text-primary-600" />
+              {/* Delivery stats cards */}
+              <div className="grid grid-cols-2 gap-3 pt-3">
+                <div className="p-3 rounded-xl bg-teal-50/70 border border-teal-100">
+                  <p className="text-[11px] font-bold uppercase text-teal-600">Delivered</p>
+                  <p className="text-xl font-extrabold text-teal-900 mt-1">{data.emailStats.delivered}</p>
+                </div>
+                <div className="p-3 rounded-xl bg-rose-50/70 border border-rose-100">
+                  <p className="text-[11px] font-bold uppercase text-rose-600">Failed</p>
+                  <p className="text-xl font-extrabold text-rose-900 mt-1">{data.emailStats.failed}</p>
+                </div>
               </div>
-              <div className="ml-4">
-                <h3 className="text-lg font-medium text-gray-900">Add Client</h3>
-                <p className="text-sm text-gray-600">Add a new client to your database</p>
-              </div>
-            </div>
-          </Link>
 
-          <Link href="/analytics" className="card p-6 hover:shadow-lg transition-shadow duration-200">
-            <div className="flex items-center">
-              <div className="flex-shrink-0 bg-primary-100 rounded-lg p-3">
-                <CurrencyDollarIcon className="h-6 w-6 text-primary-600" />
-              </div>
-              <div className="ml-4">
-                <h3 className="text-lg font-medium text-gray-900">View Analytics</h3>
-                <p className="text-sm text-gray-600">Check your business performance</p>
-              </div>
-            </div>
-          </Link>
-        </div>
-
-        {/* Email Statistics */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-          {/* Email Overview */}
-          <div className="card">
-            <div className="px-6 py-4 border-b border-gray-200">
-              <h2 className="text-lg font-medium text-gray-900">Email Statistics</h2>
-            </div>
-            <div className="p-6">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-green-600">{data.emailStats.delivered}</div>
-                  <div className="text-sm text-gray-500">Delivered</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-blue-600">{data.emailStats.totalSent - data.emailStats.delivered}</div>
-                  <div className="text-sm text-gray-500">Sent</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-red-600">{data.emailStats.failed}</div>
-                  <div className="text-sm text-gray-500">Failed</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-gray-600">{data.emailStats.notSent}</div>
-                  <div className="text-sm text-gray-500">Not Sent</div>
-                </div>
-              </div>
-              <div className="mt-4 pt-4 border-t border-gray-200">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-500">Total Emails:</span>
-                  <span className="font-medium">{data.emailStats.totalSent + data.emailStats.notSent}</span>
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-500">Delivery Rate:</span>
-                  <span className="font-medium">
-                    {data.emailStats.totalSent > 0 
-                      ? `${Math.round((data.emailStats.delivered / data.emailStats.totalSent) * 100)}%`
-                      : '0%'
-                    }
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Invoice Status */}
-          <div className="card">
-            <div className="px-6 py-4 border-b border-gray-200">
-              <h2 className="text-lg font-medium text-gray-900">Invoice Status</h2>
-            </div>
-            <div className="p-6">
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center">
-                    <CheckCircleIcon className="h-5 w-5 text-green-500 mr-2" />
-                    <span className="text-sm text-gray-600">Paid</span>
-                  </div>
-                  <span className="text-sm font-medium text-gray-900">{data.paidInvoices}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center">
-                    <ClockIcon className="h-5 w-5 text-blue-500 mr-2" />
-                    <span className="text-sm text-gray-600">Pending</span>
-                  </div>
-                  <span className="text-sm font-medium text-gray-900">{data.pendingInvoices}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center">
-                    <ExclamationTriangleIcon className="h-5 w-5 text-red-500 mr-2" />
-                    <span className="text-sm text-gray-600">Overdue</span>
-                  </div>
-                  <span className="text-sm font-medium text-gray-900">{data.overdueInvoices}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Recent Activity */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Recent Invoices */}
-          <div className="card">
-            <div className="px-6 py-4 border-b border-gray-200">
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg font-medium text-gray-900">Recent Invoices</h2>
-                <Link href="/invoices" className="text-sm text-indigo-600 hover:text-indigo-900">
-                  View all
-                </Link>
-              </div>
-            </div>
-            <div className="divide-y divide-gray-200">
-              {data.recentInvoices.length === 0 ? (
-                <div className="px-6 py-4 text-center text-gray-500">
-                  No invoices yet
-                </div>
-              ) : (
-                data.recentInvoices.map((invoice) => (
-                  <div key={invoice.id} className="px-6 py-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center space-x-3">
-                          <p className="text-sm font-medium text-gray-900">{invoice.invoiceNumber}</p>
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${getStatusColor(invoice.status)}`}>
-                            {invoice.status}
-                          </span>
-                          {invoice.emailStatus && (
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${getEmailStatusColor(invoice.emailStatus)}`}>
-                              {invoice.emailStatus === 'delivered' && <EnvelopeIcon className="h-3 w-3 mr-1" />}
-                              {invoice.emailStatus}
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-sm text-gray-500">{invoice.clientName}</p>
-                        <p className="text-xs text-gray-400">
-                          Due {format(new Date(invoice.dueDate), 'MMM dd, yyyy')}
-                          {isOverdue(invoice.dueDate) && invoice.status !== 'paid' && (
-                            <span className="ml-2 text-red-600">(Overdue)</span>
-                          )}
-                        </p>
+              {/* Recent activity list */}
+              <div className="mt-4 space-y-2.5">
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Recent Dispatches</p>
+                {data.recentEmailActivity.length > 0 ? (
+                  data.recentEmailActivity.slice(0, 4).map((activity, idx) => (
+                    <div key={idx} className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50/70 border border-slate-100 text-xs">
+                      <div>
+                        <p className="font-semibold text-slate-800">{activity.invoiceNumber}</p>
+                        <p className="text-[11px] text-slate-400">{activity.clientName}</p>
                       </div>
-                      <div className="text-right">
-                        <p className="text-sm font-medium text-gray-900">${invoice.amount.toFixed(2)}</p>
-                        {invoice.lastEmailedAt && (
-                          <p className="text-xs text-gray-500">
-                            Emailed {format(new Date(invoice.lastEmailedAt), 'MMM dd')}
-                          </p>
-                        )}
-                      </div>
+                      <StatusBadge status={activity.status} />
                     </div>
-                  </div>
-                ))
-              )}
+                  ))
+                ) : (
+                  <p className="text-xs text-slate-400 py-3 text-center">No automated emails logged yet.</p>
+                )}
+              </div>
             </div>
-          </div>
 
-          {/* Recent Email Activity */}
-          <div className="card">
-            <div className="px-6 py-4 border-b border-gray-200">
-              <h2 className="text-lg font-medium text-gray-900">Recent Email Activity</h2>
-            </div>
-            <div className="divide-y divide-gray-200">
-              {data.recentEmailActivity.length === 0 ? (
-                <div className="px-6 py-4 text-center text-gray-500">
-                  No email activity yet
-                </div>
-              ) : (
-                data.recentEmailActivity.map((activity, index) => (
-                  <div key={index} className="px-6 py-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center space-x-2">
-                          <EnvelopeIcon className="h-4 w-4 text-gray-400" />
-                          <span className="text-sm font-medium text-gray-900">
-                            {activity.emailType === 'invoice' ? 'Invoice' : 'Reminder'}
-                          </span>
-                          <span className="text-sm text-gray-500">
-                            {activity.invoiceNumber}
-                          </span>
-                        </div>
-                        <p className="text-sm text-gray-500">{activity.clientName}</p>
-                        <p className="text-xs text-gray-400">
-                          {format(new Date(activity.sentAt), 'MMM dd, yyyy HH:mm')}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${getEmailStatusColor(activity.status)}`}>
-                          {activity.status}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )}
+            <div className="pt-4 border-t border-slate-100">
+              <Link href="/invoices" className="btn-secondary w-full text-xs py-2">
+                <PaperAirplaneIcon className="h-3.5 w-3.5 mr-1" />
+                Dispatch Invoices
+              </Link>
             </div>
           </div>
         </div>

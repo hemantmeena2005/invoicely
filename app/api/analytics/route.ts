@@ -1,166 +1,89 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/lib/auth';
-import dbConnect from '@/lib/db';
-import Invoice from '@/models/Invoice';
-import Client from '@/models/Client';
-import User from '@/models/User';
+import { NextRequest, NextResponse } from 'next/server'
+import { getSessionUser } from '@/lib/authHelper'
+import { supabase } from '@/lib/supabase'
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.email) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    await dbConnect();
-    
-    const user = await User.findOne({ email: session.user.email });
+    const user = await getSessionUser()
     if (!user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get all invoices for the user
-    const invoices = await Invoice.find({ userId: user._id })
-      .populate('clientId', 'name email')
-      .sort({ createdAt: -1 });
+    const [invoicesRes, clientsRes] = await Promise.all([
+      supabase
+        .from('invoices')
+        .select('*, client:clients(name, email)')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('clients')
+        .select('*')
+        .eq('user_id', user.id),
+    ])
 
-    // Get all clients for the user
-    const clients = await Client.find({ userId: user._id });
+    const invoices = invoicesRes.data || []
+    const clients = clientsRes.data || []
 
-    // Calculate basic stats
-    const totalInvoices = invoices.length;
-    const totalClients = clients.length;
-    const totalRevenue = invoices
-      .filter(invoice => invoice.status === 'paid')
-      .reduce((sum, invoice) => sum + invoice.total, 0);
+    const totalInvoices = invoices.length
+    const totalClients = clients.length
 
-    // Invoice status counts
-    const paidInvoices = invoices.filter(invoice => invoice.status === 'paid');
-    const pendingInvoices = invoices.filter(invoice => invoice.status === 'sent');
-    const overdueInvoices = invoices.filter(invoice => {
-      const dueDate = new Date(invoice.dueDate);
-      const today = new Date();
-      return dueDate < today && invoice.status !== 'paid';
-    });
+    const paidInvoices = invoices.filter((i) => i.status === 'paid')
+    const pendingInvoices = invoices.filter((i) => i.status === 'sent')
+    const overdueInvoices = invoices.filter((i) => {
+      const dueDate = new Date(i.due_date)
+      const today = new Date()
+      return dueDate < today && i.status !== 'paid'
+    })
 
-    // Email statistics
+    const totalRevenue = paidInvoices.reduce((sum, i) => sum + (Number(i.total) || 0), 0)
+    const pendingAmount = pendingInvoices.reduce((sum, i) => sum + (Number(i.total) || 0), 0)
+    const overdueAmount = overdueInvoices.reduce((sum, i) => sum + (Number(i.total) || 0), 0)
+
     const emailStats = {
       totalSent: 0,
       delivered: 0,
       failed: 0,
-      notSent: 0
-    };
-
-    const recentEmailActivity = [];
-
-    for (const invoice of invoices) {
-      if (invoice.emailStatus && invoice.emailStatus !== 'not_sent') {
-        emailStats.totalSent++;
-        if (invoice.emailStatus === 'delivered') {
-          emailStats.delivered++;
-        } else if (invoice.emailStatus === 'failed') {
-          emailStats.failed++;
-        } else if (invoice.emailStatus === 'sent') {
-          emailStats.totalSent++;
-        }
-      } else {
-        emailStats.notSent++;
-      }
-
-      // Add to recent email activity if email was sent
-      if (invoice.lastEmailedAt && invoice.emailLogs && invoice.emailLogs.length > 0) {
-        const latestEmail = invoice.emailLogs[invoice.emailLogs.length - 1];
-        recentEmailActivity.push({
-          invoiceNumber: invoice.invoiceNumber,
-          clientName: invoice.clientId.name,
-          emailType: latestEmail.emailType,
-          status: latestEmail.status,
-          sentAt: latestEmail.sentAt
-        });
-      }
+      notSent: 0,
     }
 
-    // Sort recent email activity by date
-    recentEmailActivity.sort((a, b) => new Date(b.sentAt).getTime() - new Date(a.sentAt).getTime());
+    const recentEmailActivity = []
 
-    // Get recent invoices with email status
-    const recentInvoices = invoices.slice(0, 5).map(invoice => ({
-      _id: invoice._id,
-      invoiceNumber: invoice.invoiceNumber,
-      clientId: {
-        name: invoice.clientId.name,
-        email: invoice.clientId.email
-      },
-      total: invoice.total,
-      status: invoice.status,
-      emailStatus: invoice.emailStatus,
-      lastEmailedAt: invoice.lastEmailedAt,
-      dueDate: invoice.dueDate
-    }));
-
-    // Get top clients by revenue
-    const clientRevenue: { [key: string]: number } = {};
-    invoices.forEach(invoice => {
-      if (invoice.status === 'paid') {
-        const clientId = invoice.clientId._id.toString();
-        clientRevenue[clientId] = (clientRevenue[clientId] || 0) + invoice.total;
+    for (const invoice of invoices) {
+      if (invoice.email_status && invoice.email_status !== 'not_sent') {
+        emailStats.totalSent++
+        if (invoice.email_status === 'delivered') {
+          emailStats.delivered++
+        } else if (invoice.email_status === 'failed') {
+          emailStats.failed++
+        } else {
+          emailStats.notSent++
+        }
       }
-    });
 
-    const topClients = Object.entries(clientRevenue)
-      .sort(([,a], [,b]) => b - a)
-      .slice(0, 5)
-      .map(([clientId, revenue]) => {
-        const client = clients.find(c => c._id.toString() === clientId);
-        return {
-          id: clientId,
-          name: client?.name || 'Unknown Client',
-          revenue: revenue as number,
-          invoiceCount: invoices.filter(inv => 
-            inv.clientId._id.toString() === clientId && inv.status === 'paid'
-          ).length
-        };
-      });
-
-    // Monthly revenue for the last 6 months
-    const monthlyRevenue = [];
-    const today = new Date();
-    for (let i = 5; i >= 0; i--) {
-      const month = new Date(today.getFullYear(), today.getMonth() - i, 1);
-      const monthEnd = new Date(today.getFullYear(), today.getMonth() - i + 1, 0);
-      
-      const monthRevenue = invoices
-        .filter(invoice => {
-          const paidDate = new Date(invoice.paidAt || invoice.createdAt);
-          return invoice.status === 'paid' && 
-                 paidDate >= month && 
-                 paidDate <= monthEnd;
+      if (invoice.last_emailed_at) {
+        recentEmailActivity.push({
+          invoiceNumber: invoice.invoice_number,
+          clientName: invoice.client?.name || 'Unknown',
+          status: invoice.email_status || 'sent',
+          sentAt: invoice.last_emailed_at,
         })
-        .reduce((sum, invoice) => sum + invoice.total, 0);
-
-      monthlyRevenue.push({
-        month: month.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
-        revenue: monthRevenue
-      });
+      }
     }
 
     return NextResponse.json({
-      totalRevenue,
       totalInvoices,
       totalClients,
+      totalRevenue,
+      pendingAmount,
+      overdueAmount,
       paidInvoices: paidInvoices.length,
       pendingInvoices: pendingInvoices.length,
       overdueInvoices: overdueInvoices.length,
       emailStats,
-      recentInvoices,
-      recentEmailActivity: recentEmailActivity.slice(0, 10),
-      topClients,
-      monthlyRevenue
-    });
-
+      recentEmailActivity: recentEmailActivity.slice(0, 5),
+    })
   } catch (error) {
-    console.error('Error fetching analytics:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    console.error('Error fetching analytics from Supabase:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
-} 
+}

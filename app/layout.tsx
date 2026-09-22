@@ -1,9 +1,13 @@
 import type { Metadata, Viewport } from 'next'
-import { Inter } from 'next/font/google'
+import { Plus_Jakarta_Sans } from 'next/font/google'
 import './globals.css'
 import AuthProvider from '@/components/AuthProvider'
 
-const inter = Inter({ subsets: ['latin'] })
+const font = Plus_Jakarta_Sans({ 
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700', '800'],
+  display: 'swap',
+})
 
 export const metadata: Metadata = {
   title: 'Invoicely - Professional Invoice Management',
@@ -31,7 +35,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className={inter.className}>
+      <body className={font.className}>
         <AuthProvider>
           {children}
         </AuthProvider>

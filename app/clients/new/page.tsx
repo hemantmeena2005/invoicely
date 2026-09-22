@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import DashboardLayout from '@/components/DashboardLayout'
-import { ArrowLeftIcon } from '@heroicons/react/24/outline'
+import { ArrowLeftIcon, UserPlusIcon, BuildingOffice2Icon, MapPinIcon } from '@heroicons/react/24/outline'
 import Link from 'next/link'
 
 export default function NewClientPage() {
@@ -28,13 +28,13 @@ export default function NewClientPage() {
     const newErrors: Record<string, string> = {}
 
     if (!formData.name.trim()) {
-      newErrors.name = 'Name is required'
+      newErrors.name = 'Client name is required'
     }
 
     if (!formData.email.trim()) {
-      newErrors.email = 'Email is required'
+      newErrors.email = 'Email address is required'
     } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
-      newErrors.email = 'Email is invalid'
+      newErrors.email = 'Please provide a valid email'
     }
 
     setErrors(newErrors)
@@ -43,9 +43,7 @@ export default function NewClientPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-
     if (!validateForm()) return
-
     setLoading(true)
 
     try {
@@ -64,7 +62,7 @@ export default function NewClientPage() {
         setErrors({ submit: error.error || 'Failed to create client' })
       }
     } catch (error) {
-      setErrors({ submit: 'An error occurred while creating the client' })
+      setErrors({ submit: 'An error occurred while creating client' })
     } finally {
       setLoading(false)
     }
@@ -77,7 +75,7 @@ export default function NewClientPage() {
       setFormData(prev => ({
         ...prev,
         [parent]: {
-          ...(parent === "address" && typeof prev.address === "object" ? prev.address : {}),
+          ...(parent === 'address' && typeof prev.address === 'object' ? prev.address : {}),
           [child]: value,
         },
       }))
@@ -91,194 +89,199 @@ export default function NewClientPage() {
 
   return (
     <DashboardLayout>
-      <div className="max-w-2xl mx-auto">
+      <div className="max-w-3xl mx-auto space-y-6 animate-fade-in">
         {/* Header */}
-        <div className="mb-6">
-          <Link href="/clients" className="inline-flex items-center text-sm text-gray-500 hover:text-gray-700 mb-4">
-            <ArrowLeftIcon className="h-4 w-4 mr-1" />
+        <div>
+          <Link
+            href="/clients"
+            className="inline-flex items-center text-xs font-semibold text-slate-500 hover:text-slate-800 mb-2 transition-colors"
+          >
+            <ArrowLeftIcon className="h-3.5 w-3.5 mr-1" />
             Back to Clients
           </Link>
-          <h1 className="text-2xl font-bold text-gray-900">Add New Client</h1>
-          <p className="text-gray-600">Enter your client's information</p>
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">Add New Client</h1>
+          <p className="text-slate-500 text-sm mt-0.5">Register client details for automated invoicing and billing</p>
         </div>
 
-        {/* Form */}
-        <div className="card p-6">
-          <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Basic Information */}
-            <div>
-              <h3 className="text-lg font-medium text-gray-900 mb-4">Basic Information</h3>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
-                    Name *
-                  </label>
-                  <input
-                    type="text"
-                    id="name"
-                    name="name"
-                    value={formData.name}
-                    onChange={handleChange}
-                    className={`input-field ${errors.name ? 'border-red-500' : ''}`}
-                    placeholder="Client name"
-                  />
-                  {errors.name && <p className="mt-1 text-sm text-red-600">{errors.name}</p>}
-                </div>
+        {errors.submit && (
+          <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-sm font-semibold">
+            {errors.submit}
+          </div>
+        )}
 
-                <div>
-                  <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
-                    Email *
-                  </label>
-                  <input
-                    type="email"
-                    id="email"
-                    name="email"
-                    value={formData.email}
-                    onChange={handleChange}
-                    className={`input-field ${errors.email ? 'border-red-500' : ''}`}
-                    placeholder="client@example.com"
-                  />
-                  {errors.email && <p className="mt-1 text-sm text-red-600">{errors.email}</p>}
-                </div>
+        <form onSubmit={handleSubmit} className="space-y-6">
+          {/* General Info Card */}
+          <div className="card p-6 space-y-5">
+            <h2 className="text-base font-bold text-slate-900 border-b border-slate-100 pb-3 flex items-center gap-2">
+              <UserPlusIcon className="h-4 w-4 text-primary-600" />
+              <span>Contact Information</span>
+            </h2>
 
-                <div>
-                  <label htmlFor="company" className="block text-sm font-medium text-gray-700 mb-1">
-                    Company
-                  </label>
-                  <input
-                    type="text"
-                    id="company"
-                    name="company"
-                    value={formData.company}
-                    onChange={handleChange}
-                    className="input-field"
-                    placeholder="Company name"
-                  />
-                </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+                  Full Name *
+                </label>
+                <input
+                  type="text"
+                  name="name"
+                  value={formData.name}
+                  onChange={handleChange}
+                  placeholder="e.g. Sarah Connor"
+                  className={`input-field ${errors.name ? 'border-rose-400 focus:ring-rose-200' : ''}`}
+                />
+                {errors.name && <p className="mt-1 text-xs text-rose-600">{errors.name}</p>}
+              </div>
 
-                <div>
-                  <label htmlFor="phone" className="block text-sm font-medium text-gray-700 mb-1">
-                    Phone
-                  </label>
-                  <input
-                    type="tel"
-                    id="phone"
-                    name="phone"
-                    value={formData.phone}
-                    onChange={handleChange}
-                    className="input-field"
-                    placeholder="Phone number"
-                  />
-                </div>
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+                  Email Address *
+                </label>
+                <input
+                  type="email"
+                  name="email"
+                  value={formData.email}
+                  onChange={handleChange}
+                  placeholder="sarah@example.com"
+                  className={`input-field ${errors.email ? 'border-rose-400 focus:ring-rose-200' : ''}`}
+                />
+                {errors.email && <p className="mt-1 text-xs text-rose-600">{errors.email}</p>}
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+                  Company Name (Optional)
+                </label>
+                <input
+                  type="text"
+                  name="company"
+                  value={formData.company}
+                  onChange={handleChange}
+                  placeholder="e.g. Cyberdyne Systems"
+                  className="input-field"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+                  Phone Number (Optional)
+                </label>
+                <input
+                  type="tel"
+                  name="phone"
+                  value={formData.phone}
+                  onChange={handleChange}
+                  placeholder="+1 (555) 000-0000"
+                  className="input-field"
+                />
               </div>
             </div>
+          </div>
 
-            {/* Address */}
-            <div>
-              <h3 className="text-lg font-medium text-gray-900 mb-4">Address</h3>
-              <div className="space-y-4">
+          {/* Billing Address Card */}
+          <div className="card p-6 space-y-5">
+            <h2 className="text-base font-bold text-slate-900 border-b border-slate-100 pb-3 flex items-center gap-2">
+              <MapPinIcon className="h-4 w-4 text-primary-600" />
+              <span>Billing Address</span>
+            </h2>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+                  Street Address
+                </label>
+                <input
+                  type="text"
+                  name="address.street"
+                  value={formData.address.street}
+                  onChange={handleChange}
+                  placeholder="123 Innovation Way, Suite 400"
+                  className="input-field"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label htmlFor="address.street" className="block text-sm font-medium text-gray-700 mb-1">
-                    Street Address
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+                    City
                   </label>
                   <input
                     type="text"
-                    id="address.street"
-                    name="address.street"
-                    value={formData.address.street}
+                    name="address.city"
+                    value={formData.address.city}
                     onChange={handleChange}
+                    placeholder="San Francisco"
                     className="input-field"
-                    placeholder="123 Main St"
                   />
                 </div>
 
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                  <div>
-                    <label htmlFor="address.city" className="block text-sm font-medium text-gray-700 mb-1">
-                      City
-                    </label>
-                    <input
-                      type="text"
-                      id="address.city"
-                      name="address.city"
-                      value={formData.address.city}
-                      onChange={handleChange}
-                      className="input-field"
-                      placeholder="City"
-                    />
-                  </div>
-
-                  <div>
-                    <label htmlFor="address.state" className="block text-sm font-medium text-gray-700 mb-1">
-                      State
-                    </label>
-                    <input
-                      type="text"
-                      id="address.state"
-                      name="address.state"
-                      value={formData.address.state}
-                      onChange={handleChange}
-                      className="input-field"
-                      placeholder="State"
-                    />
-                  </div>
-
-                  <div>
-                    <label htmlFor="address.zipCode" className="block text-sm font-medium text-gray-700 mb-1">
-                      ZIP Code
-                    </label>
-                    <input
-                      type="text"
-                      id="address.zipCode"
-                      name="address.zipCode"
-                      value={formData.address.zipCode}
-                      onChange={handleChange}
-                      className="input-field"
-                      placeholder="ZIP Code"
-                    />
-                  </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+                    State / Province
+                  </label>
+                  <input
+                    type="text"
+                    name="address.state"
+                    value={formData.address.state}
+                    onChange={handleChange}
+                    placeholder="CA"
+                    className="input-field"
+                  />
                 </div>
 
                 <div>
-                  <label htmlFor="address.country" className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+                    Postal / Zip Code
+                  </label>
+                  <input
+                    type="text"
+                    name="address.zipCode"
+                    value={formData.address.zipCode}
+                    onChange={handleChange}
+                    placeholder="94103"
+                    className="input-field"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
                     Country
                   </label>
                   <input
                     type="text"
-                    id="address.country"
                     name="address.country"
                     value={formData.address.country}
                     onChange={handleChange}
+                    placeholder="United States"
                     className="input-field"
-                    placeholder="Country"
                   />
                 </div>
               </div>
             </div>
+          </div>
 
-            {/* Error Message */}
-            {errors.submit && (
-              <div className="bg-red-50 border border-red-200 rounded-md p-4">
-                <p className="text-sm text-red-600">{errors.submit}</p>
-              </div>
-            )}
-
-            {/* Submit Button */}
-            <div className="flex justify-end space-x-3">
-              <Link href="/clients" className="btn-secondary">
-                Cancel
-              </Link>
-              <button
-                type="submit"
-                disabled={loading}
-                className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {loading ? 'Creating...' : 'Create Client'}
-              </button>
-            </div>
-          </form>
-        </div>
+          {/* Action Buttons */}
+          <div className="flex items-center justify-end gap-3 pt-2">
+            <Link
+              href="/clients"
+              className="btn-secondary"
+            >
+              Cancel
+            </Link>
+            <button
+              type="submit"
+              disabled={loading}
+              className="btn-primary shadow-glow-primary px-6 py-2.5"
+            >
+              {loading ? (
+                <div className="h-5 w-5 border-2 border-white border-t-transparent rounded-full animate-spin mx-auto" />
+              ) : (
+                'Save Client'
+              )}
+            </button>
+          </div>
+        </form>
       </div>
     </DashboardLayout>
   )
-} 
+}

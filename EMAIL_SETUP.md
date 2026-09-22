@@ -66,7 +66,7 @@ Replace:
 - Professional HTML email template
 - PDF invoice attachment
 - Invoice details in email body
-- Payment link (if Stripe is configured)
+- Payment link (Secure Client Public UPI QR Portal)
 
 ### Payment Reminders
 - Sent for overdue invoices
