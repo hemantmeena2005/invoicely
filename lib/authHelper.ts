@@ -35,18 +35,25 @@ export async function getSessionUser(): Promise<SessionUser | null> {
       .single()
 
     if (existingUser && !fetchError) {
+      let meta: Record<string, any> = {}
+      if (existingUser.stripe_customer_id && typeof existingUser.stripe_customer_id === 'string' && existingUser.stripe_customer_id.startsWith('{')) {
+        try {
+          meta = JSON.parse(existingUser.stripe_customer_id)
+        } catch (e) {}
+      }
+
       return {
         id: existingUser.id,
         _id: existingUser.id,
         email: existingUser.email,
         name: existingUser.name,
         image: existingUser.image,
-        upi_id: existingUser.upi_id || process.env.NEXT_PUBLIC_DEFAULT_UPI_ID || 'hemantmeena2005@oksbi',
-        upi_name: existingUser.upi_name || existingUser.name,
-        upi_qr_code: existingUser.upi_qr_code || '',
-        business_name: existingUser.business_name || '',
-        business_phone: existingUser.business_phone || '',
-        business_address: existingUser.business_address || '',
+        upi_id: existingUser.upi_id || meta.upi_id || process.env.NEXT_PUBLIC_DEFAULT_UPI_ID || 'hemantmeena2005@oksbi',
+        upi_name: existingUser.upi_name || meta.upi_name || existingUser.name,
+        upi_qr_code: existingUser.upi_qr_code || meta.upi_qr_code || '',
+        business_name: existingUser.business_name || meta.business_name || '',
+        business_phone: existingUser.business_phone || meta.business_phone || '',
+        business_address: existingUser.business_address || meta.business_address || '',
       }
     }
 
