@@ -88,7 +88,24 @@ export default function InvoiceViewPage() {
     fetchInvoice()
     fetchEmailStatus()
     fetchProfile()
-  }, [invoiceId])
+
+    // Real-time polling to detect client payment instantly
+    const interval = setInterval(() => {
+      if (invoice?.status !== 'paid') {
+        fetchInvoice(true) // silent refresh
+      }
+    }, 4000)
+
+    const handleFocus = () => {
+      fetchInvoice(true)
+    }
+    window.addEventListener('focus', handleFocus)
+
+    return () => {
+      clearInterval(interval)
+      window.removeEventListener('focus', handleFocus)
+    }
+  }, [invoiceId, invoice?.status])
 
   const handleCopyPaymentLink = () => {
     const origin = window.location.origin
@@ -128,20 +145,27 @@ export default function InvoiceViewPage() {
     }
   }, [searchParams, invoiceId])
 
-  const fetchInvoice = async () => {
+  const fetchInvoice = async (silent = false) => {
     try {
       const response = await fetch(`/api/invoices/${invoiceId}`)
       if (response.ok) {
         const data = await response.json()
-        setInvoice(data)
-      } else {
+        setInvoice(prev => {
+          if (prev?.status !== 'paid' && data.status === 'paid') {
+            setPaymentSuccessCelebration(true)
+          }
+          return data
+        })
+      } else if (!silent) {
         router.push('/invoices')
       }
     } catch (error) {
-      console.error('Error fetching invoice:', error)
-      router.push('/invoices')
+      if (!silent) {
+        console.error('Error fetching invoice:', error)
+        router.push('/invoices')
+      }
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }
 
@@ -181,6 +205,17 @@ export default function InvoiceViewPage() {
 
   const handleToggleStatus = async (newStatus: 'paid' | 'draft' | 'sent') => {
     setFeedbackMessage(null)
+    // Instant optimistic update
+    setInvoice(prev => prev ? {
+      ...prev,
+      status: newStatus,
+      paidAt: newStatus === 'paid' ? new Date().toISOString() : undefined,
+    } : prev)
+
+    if (newStatus === 'paid') {
+      setPaymentSuccessCelebration(true)
+    }
+
     try {
       const response = await fetch(`/api/invoices/${invoiceId}`, {
         method: 'PUT',
@@ -188,13 +223,16 @@ export default function InvoiceViewPage() {
         body: JSON.stringify({ status: newStatus }),
       })
       if (response.ok) {
-        setFeedbackMessage(`Invoice status updated to ${newStatus}`)
-        fetchInvoice()
+        const updated = await response.json()
+        setInvoice(updated)
+        setFeedbackMessage(`Invoice status updated to ${newStatus.toUpperCase()}`)
       } else {
         setFeedbackMessage('Failed to update invoice status')
+        fetchInvoice()
       }
     } catch (error) {
       setFeedbackMessage('An error occurred updating status')
+      fetchInvoice()
     }
   }
 

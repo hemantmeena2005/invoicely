@@ -13,20 +13,12 @@ export interface UpiPaymentParams {
  */
 export function buildUpiUri({ upiId, payeeName, amount, invoiceNumber, note }: UpiPaymentParams): string {
   const cleanUpi = upiId.trim()
-  const cleanName = payeeName.trim() || 'Merchant'
+  const cleanName = encodeURIComponent(payeeName.trim() || 'Merchant')
   const cleanAmount = Number(amount || 0).toFixed(2)
-  const transactionNote = (note || `Invoice ${invoiceNumber}`).substring(0, 50)
+  const transactionNote = encodeURIComponent((note || `Invoice ${invoiceNumber}`).substring(0, 50))
 
-  // Standard NPCI UPI URI Specification
-  const params = new URLSearchParams({
-    pa: cleanUpi,
-    pn: cleanName,
-    am: cleanAmount,
-    cu: 'INR',
-    tn: transactionNote,
-  })
-
-  return `upi://pay?${params.toString()}`
+  // Standard NPCI UPI URI Specification: Keep @ unescaped for UPI apps (GPay, PhonePe, Paytm, BHIM)
+  return `upi://pay?pa=${cleanUpi}&pn=${cleanName}&am=${cleanAmount}&cu=INR&tn=${transactionNote}`
 }
 
 /**
