@@ -19,6 +19,7 @@ import {
   QrCodeIcon,
   LinkIcon,
   DocumentDuplicateIcon,
+  ShieldCheckIcon,
 } from '@heroicons/react/24/outline'
 import Link from 'next/link'
 import { StatusBadge } from '@/components/ui/Badge'
@@ -466,6 +467,14 @@ export default function InvoiceViewPage() {
                   <p className="text-xs text-emerald-600 font-medium mt-1">
                     Paid on {new Date(invoice.paidAt).toLocaleDateString()}
                   </p>
+                )}
+                {invoice.terms && invoice.terms.includes('UTR:') && (
+                  <div className="mt-1">
+                    <span className="text-[11px] font-mono font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 inline-flex items-center gap-1 shadow-sm">
+                      <ShieldCheckIcon className="h-3.5 w-3.5 text-emerald-600" />
+                      UTR: {invoice.terms.split('UTR:')[1]?.split('|')[0]?.trim()}
+                    </span>
+                  </div>
                 )}
               </div>
             </div>

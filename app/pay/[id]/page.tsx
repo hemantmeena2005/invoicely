@@ -97,7 +97,7 @@ export default function PublicInvoicePayPage() {
   useEffect(() => {
     if (searchParams.get('success') === 'true') {
       setCelebrateSuccess(true)
-      handleMarkPaid()
+      fetchPublicInvoice()
     }
   }, [searchParams])
 
@@ -147,23 +147,39 @@ export default function PublicInvoicePayPage() {
     }
   }
 
-  const handleMarkPaid = async () => {
+  const [utrInput, setUtrInput] = useState('')
+  const [utrError, setUtrError] = useState<string | null>(null)
+  const [verifiedUtr, setVerifiedUtr] = useState<string | null>(null)
+
+  const handleVerifyUtr = async () => {
+    if (!utrInput.trim()) {
+      setUtrError('Please enter the 12-digit UPI reference (UTR) from your receipt.')
+      return
+    }
+
     try {
       setConfirmingPaid(true)
-      const res = await fetch(`/api/pay/${invoiceId}`, {
-        method: 'PUT',
+      setUtrError(null)
+
+      const res = await fetch(`/api/pay/${invoiceId}/verify`, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'paid' }),
+        body: JSON.stringify({ utr: utrInput.trim() }),
       })
 
-      if (res.ok) {
-        setCelebrateSuccess(true)
-        if (invoice) {
-          setInvoice({ ...invoice, status: 'paid', paidAt: new Date().toISOString() })
-        }
+      const data = await res.json()
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to verify UTR')
       }
-    } catch (e) {
-      console.error('Failed to confirm paid:', e)
+
+      setVerifiedUtr(data.utr)
+      setCelebrateSuccess(true)
+      if (invoice) {
+        setInvoice({ ...invoice, status: 'paid', paidAt: data.paidAt || new Date().toISOString() })
+      }
+    } catch (e: any) {
+      setUtrError(e.message || 'Verification failed. Please check the UTR number.')
     } finally {
       setConfirmingPaid(false)
     }
@@ -526,29 +542,61 @@ export default function PublicInvoicePayPage() {
                       </button>
                     </div>
 
-                    {/* 4. Manual Confirmation Button */}
-                    <div className="space-y-2 pt-1">
+                    {/* 4. Bank UTR Verification Input & Confirm */}
+                    <div className="p-4 rounded-2xl bg-slate-950/90 border border-slate-800 space-y-3">
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <label className="text-[11px] font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
+                            <ShieldCheckIcon className="h-4 w-4" />
+                            Enter 12-Digit Bank UTR / Ref No
+                          </label>
+                          <span className="text-[10px] text-slate-400 font-mono">
+                            {utrInput.length}/12
+                          </span>
+                        </div>
+                        <input
+                          type="text"
+                          maxLength={16}
+                          value={utrInput}
+                          onChange={(e) => {
+                            setUtrInput(e.target.value.replace(/[^0-9a-zA-Z]/g, ''))
+                            setUtrError(null)
+                          }}
+                          placeholder="e.g. 426718902345"
+                          className="input-field bg-slate-900 border-slate-700 text-white font-mono text-sm tracking-widest placeholder:tracking-normal placeholder:text-slate-500 py-2.5"
+                        />
+                        <p className="text-[10px] text-slate-400 mt-1">
+                          Found in your Google Pay, PhonePe, or Paytm payment receipt
+                        </p>
+                      </div>
+
+                      {utrError && (
+                        <div className="p-2.5 rounded-xl bg-rose-950/80 border border-rose-800 text-rose-300 text-xs font-semibold">
+                          {utrError}
+                        </div>
+                      )}
+
                       <button
                         type="button"
-                        onClick={handleMarkPaid}
-                        disabled={confirmingPaid}
-                        className="btn-primary w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20 cursor-pointer text-white"
+                        onClick={handleVerifyUtr}
+                        disabled={confirmingPaid || utrInput.length < 10}
+                        className="btn-primary w-full py-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20 cursor-pointer text-white"
                       >
                         {confirmingPaid ? (
                           <>
                             <ArrowPathIcon className="h-4 w-4 animate-spin" />
-                            <span>Verifying Transfer...</span>
+                            <span>Verifying Bank UTR...</span>
                           </>
                         ) : (
                           <>
-                            <CheckIcon className="h-4 w-4 stroke-[3]" />
-                            <span>I Have Completed Payment</span>
+                            <ShieldCheckIcon className="h-4 w-4 stroke-[2.5]" />
+                            <span>Verify & Confirm Payment</span>
                           </>
                         )}
                       </button>
 
                       <p className="text-center text-[10px] text-slate-500">
-                        Protected by 256-bit bank-grade encryption • 0% Platform Surcharge
+                        Protected against duplicate submissions • Instant bank audit trail
                       </p>
                     </div>
                   </div>
