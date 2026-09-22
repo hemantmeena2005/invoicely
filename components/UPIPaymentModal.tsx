@@ -10,9 +10,11 @@ import {
   PencilSquareIcon,
   QrCodeIcon,
   ClockIcon,
-  ArrowPathIcon
+  ArrowPathIcon,
+  InformationCircleIcon,
+  ShieldCheckIcon
 } from '@heroicons/react/24/outline'
-import { buildUpiUri, generateUpiQrDataUrl } from '@/lib/upiHelper'
+import { buildUpiUri, buildGPayUri, buildPhonePeUri, buildPaytmUri, generateUpiQrDataUrl } from '@/lib/upiHelper'
 
 interface UPIPaymentModalProps {
   isOpen: boolean
@@ -39,6 +41,7 @@ export default function UPIPaymentModal({
   const [isEditingUpi, setIsEditingUpi] = useState(false)
   const [qrDataUrl, setQrDataUrl] = useState<string>('')
   const [copied, setCopied] = useState(false)
+  const [copiedAmount, setCopiedAmount] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [paidSuccess, setPaidSuccess] = useState(false)
   const [activeQrTab, setActiveQrTab] = useState<'dynamic' | 'custom'>(customQrUrl ? 'custom' : 'dynamic')
@@ -75,21 +78,21 @@ export default function UPIPaymentModal({
     return () => clearInterval(timer)
   }, [isOpen])
 
-  const upiUri = buildUpiUri({
+  const paymentParams = {
     upiId: upiId || 'hemantmeena2005@oksbi',
     payeeName,
     amount,
     invoiceNumber,
-  })
+  }
+
+  const upiUri = buildUpiUri(paymentParams)
+  const gpayUri = buildGPayUri(paymentParams)
+  const phonePeUri = buildPhonePeUri(paymentParams)
+  const paytmUri = buildPaytmUri(paymentParams)
 
   useEffect(() => {
     if (isOpen) {
-      generateUpiQrDataUrl({
-        upiId: upiId || 'hemantmeena2005@oksbi',
-        payeeName,
-        amount,
-        invoiceNumber,
-      }, 260).then(url => setQrDataUrl(url))
+      generateUpiQrDataUrl(paymentParams, 260).then(url => setQrDataUrl(url))
     }
   }, [isOpen, upiId, payeeName, amount, invoiceNumber])
 
@@ -105,6 +108,12 @@ export default function UPIPaymentModal({
     navigator.clipboard.writeText(upiId)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
+  }
+
+  const handleCopyAmount = () => {
+    navigator.clipboard.writeText(amount.toString())
+    setCopiedAmount(true)
+    setTimeout(() => setCopiedAmount(false), 2000)
   }
 
   const handleConfirm = async () => {
@@ -131,15 +140,15 @@ export default function UPIPaymentModal({
       color: 'hover:border-blue-500 hover:bg-blue-50/50',
       badge: 'bg-blue-600 text-white',
       desc: 'Instant 1-Tap',
-      iconUrl: 'https://cdn.iconscout.com/icon/free/png-256/free-google-pay-2038779-1721670.png',
+      href: gpayUri,
     },
     {
       name: 'PhonePe',
       shortName: 'PhonePe',
       color: 'hover:border-purple-500 hover:bg-purple-50/50',
       badge: 'bg-purple-700 text-white',
-      desc: 'Popular',
-      iconUrl: 'https://cdn.iconscout.com/icon/free/png-256/free-phonepe-2038772-1721663.png',
+      desc: '1-Tap (No Limit)',
+      href: phonePeUri,
     },
     {
       name: 'Paytm',
@@ -147,15 +156,15 @@ export default function UPIPaymentModal({
       color: 'hover:border-sky-500 hover:bg-sky-50/50',
       badge: 'bg-sky-500 text-white',
       desc: 'Fast Pay',
-      iconUrl: 'https://cdn.iconscout.com/icon/free/png-256/free-paytm-226448.png',
+      href: paytmUri,
     },
     {
-      name: 'BHIM / CRED',
+      name: 'BHIM / Any UPI',
       shortName: 'All UPI',
       color: 'hover:border-emerald-500 hover:bg-emerald-50/50',
       badge: 'bg-emerald-600 text-white',
       desc: 'Any App',
-      iconUrl: 'https://cdn.iconscout.com/icon/free/png-256/free-bhim-3-1175220.png',
+      href: upiUri,
     },
   ]
 
@@ -210,9 +219,18 @@ export default function UPIPaymentModal({
 
               <div className="mt-4 pt-3 border-t border-white/10 flex items-baseline justify-between">
                 <span className="text-xs text-indigo-200 font-medium">Exact Amount Due:</span>
-                <span className="text-2xl font-black text-emerald-400 tracking-tight">
-                  ₹{amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-2xl font-black text-emerald-400 tracking-tight">
+                    ₹{amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </span>
+                  <button
+                    onClick={handleCopyAmount}
+                    title="Copy Amount"
+                    className="p-1 rounded bg-white/10 hover:bg-white/20 text-xs text-emerald-200"
+                  >
+                    {copiedAmount ? <CheckIcon className="h-3.5 w-3.5 text-emerald-400" /> : <DocumentDuplicateIcon className="h-3.5 w-3.5" />}
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -220,14 +238,17 @@ export default function UPIPaymentModal({
             <div className="p-6 space-y-5 max-h-[80vh] overflow-y-auto">
               {/* 1. UPI App Selector Grid (Mobile 1-Tap Launchers) */}
               <div className="space-y-2">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                  1. Tap to Pay in UPI App (Mobile)
-                </span>
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                    1. Tap to Pay in UPI App (Mobile)
+                  </span>
+                  <span className="text-[10px] text-emerald-600 font-semibold">0% Surcharge</span>
+                </div>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                   {upiApps.map((app) => (
                     <a
                       key={app.name}
-                      href={upiUri}
+                      href={app.href}
                       onClick={() => setSelectedApp(app.name)}
                       className={`p-3 rounded-2xl border border-slate-200/80 flex flex-col items-center text-center transition-all duration-200 group cursor-pointer ${app.color} ${
                         selectedApp === app.name ? 'ring-2 ring-indigo-600 bg-indigo-50/50' : 'bg-slate-50/60'
@@ -339,6 +360,18 @@ export default function UPIPaymentModal({
                     </button>
                   </div>
                 )}
+              </div>
+
+              {/* UPI & Banking Tips Callout */}
+              <div className="p-3 rounded-2xl bg-indigo-50/70 border border-indigo-100/80 text-[11px] text-indigo-900 space-y-1">
+                <div className="flex items-center gap-1.5 font-bold text-indigo-950">
+                  <InformationCircleIcon className="h-4 w-4 text-indigo-600 flex-shrink-0" />
+                  <span>UPI Payment & Limit Guidance</span>
+                </div>
+                <ul className="list-disc list-inside space-y-0.5 text-indigo-900/80 text-[10px] pl-1">
+                  <li><strong>Amounts &gt; ₹2,000:</strong> Tap the app button above or scan QR with camera (PhonePe caps photo-gallery uploads to ₹2,000).</li>
+                  <li><strong>Bank Limit Warning:</strong> If your bank shows a daily limit on GPay, use PhonePe/Paytm or copy the UPI ID directly.</li>
+                </ul>
               </div>
 
               {/* 4. Live Verification Indicator & 1-Click Confirmation */}

@@ -16,7 +16,7 @@ import {
   ArrowPathIcon,
   InformationCircleIcon
 } from '@heroicons/react/24/outline'
-import { buildUpiUri, generateUpiQrDataUrl } from '@/lib/upiHelper'
+import { buildUpiUri, buildGPayUri, buildPhonePeUri, buildPaytmUri, generateUpiQrDataUrl } from '@/lib/upiHelper'
 
 interface PublicInvoice {
   id: string
@@ -220,20 +220,24 @@ export default function PublicInvoicePayPage() {
 
   const isPaid = invoice.status === 'paid'
   const payeeDisplayName = invoice.merchant.businessName || invoice.merchant.upiName || invoice.merchant.name
-  const upiUri = buildUpiUri({
+  const paymentParams = {
     upiId: invoice.merchant.upiId,
     payeeName: payeeDisplayName,
     amount: invoice.total,
     invoiceNumber: invoice.invoiceNumber,
-  })
+  }
+  const upiUri = buildUpiUri(paymentParams)
+  const gpayUri = buildGPayUri(paymentParams)
+  const phonePeUri = buildPhonePeUri(paymentParams)
+  const paytmUri = buildPaytmUri(paymentParams)
 
   const currentQrImage = (activeQrType === 'custom' && invoice.merchant.upiQrCode) ? invoice.merchant.upiQrCode : qrDataUrl
 
   const upiApps = [
-    { name: 'Google Pay', shortName: 'GPay', desc: 'Instant 1-Tap' },
-    { name: 'PhonePe', shortName: 'PhonePe', desc: 'Popular' },
-    { name: 'Paytm', shortName: 'Paytm', desc: 'Fast Pay' },
-    { name: 'BHIM / Any UPI', shortName: 'All UPI', desc: 'Any App' },
+    { name: 'Google Pay', shortName: 'GPay', desc: 'Instant 1-Tap', href: gpayUri },
+    { name: 'PhonePe', shortName: 'PhonePe', desc: '1-Tap (No Limit)', href: phonePeUri },
+    { name: 'Paytm', shortName: 'Paytm', desc: 'Fast Pay', href: paytmUri },
+    { name: 'BHIM / Any UPI', shortName: 'All UPI', desc: 'Any App', href: upiUri },
   ]
 
   return (
@@ -444,14 +448,17 @@ export default function PublicInvoicePayPage() {
                   <div className="space-y-5 pt-1">
                     {/* 1. UPI App Launchers (Mobile 1-Tap) */}
                     <div className="space-y-2">
-                      <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                        Select UPI App to Pay
-                      </span>
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                          Select UPI App to Pay
+                        </span>
+                        <span className="text-[10px] text-emerald-400 font-semibold">0% Surcharge</span>
+                      </div>
                       <div className="grid grid-cols-2 gap-2">
                         {upiApps.map((app) => (
                           <a
                             key={app.name}
-                            href={upiUri}
+                            href={app.href}
                             onClick={() => setSelectedApp(app.name)}
                             className={`p-2.5 rounded-xl border border-slate-800 bg-slate-950/80 hover:border-indigo-500 hover:bg-indigo-950/30 transition-all flex items-center gap-2.5 cursor-pointer ${
                               selectedApp === app.name ? 'ring-2 ring-indigo-500 bg-indigo-950/50' : ''
@@ -540,6 +547,18 @@ export default function PublicInvoicePayPage() {
                         {copied ? <CheckIcon className="h-3.5 w-3.5 text-emerald-400" /> : <DocumentDuplicateIcon className="h-3.5 w-3.5" />}
                         <span>{copied ? 'Copied' : 'Copy'}</span>
                       </button>
+                    </div>
+
+                    {/* UPI Limits & Guidance Notice */}
+                    <div className="p-3 rounded-2xl bg-slate-950/80 border border-indigo-900/50 text-[11px] space-y-1">
+                      <div className="flex items-center gap-1.5 font-bold text-indigo-300">
+                        <InformationCircleIcon className="h-4 w-4 text-indigo-400 flex-shrink-0" />
+                        <span>Payment Limit Guide</span>
+                      </div>
+                      <ul className="list-disc list-inside space-y-0.5 text-slate-400 text-[10px] pl-1">
+                        <li><strong className="text-slate-300">Amounts &gt; ₹2,000:</strong> Tap the app button directly or scan with camera (PhonePe photo gallery upload has a ₹2,000 fraud cap).</li>
+                        <li><strong className="text-slate-300">Bank Limit Warning:</strong> If GPay reports a bank limit, try PhonePe/Paytm or copy the UPI ID directly.</li>
+                      </ul>
                     </div>
 
                     {/* 4. Bank UTR Verification Input & Confirm */}

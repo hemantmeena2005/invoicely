@@ -13,24 +13,40 @@ export interface UpiPaymentParams {
  */
 export function buildUpiUri({ upiId, payeeName, amount, invoiceNumber, note }: UpiPaymentParams): string {
   const cleanUpi = upiId.trim()
-  const cleanName = encodeURIComponent(payeeName.trim() || 'Merchant')
+  
+  // Clean payee name (alphanumeric and spaces only, max 25 chars for strict BHIM compatibility)
+  const sanitizedName = (payeeName || 'Merchant')
+    .replace(/[^a-zA-Z0-9 ]/g, '')
+    .trim()
+    .substring(0, 25) || 'Merchant'
+  const cleanName = encodeURIComponent(sanitizedName)
+
   const cleanAmount = Number(amount || 0).toFixed(2)
-  const transactionNote = encodeURIComponent((note || `Invoice ${invoiceNumber}`).substring(0, 50))
+
+  // Clean note (strictly alphanumeric, max 20 chars, removes all special characters & hyphens to prevent BHIM 'request type not supported' error)
+  const sanitizedNote = (note || `INV${invoiceNumber.replace(/[^a-zA-Z0-9]/g, '')}`)
+    .replace(/[^a-zA-Z0-9]/g, '')
+    .trim()
+    .substring(0, 20) || 'Payment'
+  const cleanNote = encodeURIComponent(sanitizedNote)
 
   // Standard NPCI UPI URI Specification: Keep @ unescaped for UPI apps (GPay, PhonePe, Paytm, BHIM)
-  return `upi://pay?pa=${cleanUpi}&pn=${cleanName}&am=${cleanAmount}&cu=INR&tn=${transactionNote}`
+  return `upi://pay?pa=${cleanUpi}&pn=${cleanName}&am=${cleanAmount}&cu=INR&tn=${cleanNote}`
 }
 
 export function buildGPayUri(params: UpiPaymentParams): string {
-  return buildUpiUri(params)
+  const baseUri = buildUpiUri(params).replace('upi://pay?', '')
+  return `tez://upi/pay?${baseUri}`
 }
 
 export function buildPhonePeUri(params: UpiPaymentParams): string {
-  return buildUpiUri(params)
+  const baseUri = buildUpiUri(params).replace('upi://pay?', '')
+  return `phonepe://pay?${baseUri}`
 }
 
 export function buildPaytmUri(params: UpiPaymentParams): string {
-  return buildUpiUri(params)
+  const baseUri = buildUpiUri(params).replace('upi://pay?', '')
+  return `paytmmp://pay?${baseUri}`
 }
 
 /**
