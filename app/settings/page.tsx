@@ -162,6 +162,17 @@ export default function SettingsPage() {
         throw new Error('Failed to update profile settings')
       }
 
+      const resData = await res.json()
+      if (resData?.user) {
+        setName(resData.user.name || name)
+        setUpiId(resData.user.upi_id || upiId)
+        setUpiName(resData.user.upi_name || upiName)
+        setUpiQrCode(resData.user.upi_qr_code || '')
+        setBusinessName(resData.user.business_name || '')
+        setBusinessPhone(resData.user.business_phone || '')
+        setBusinessAddress(resData.user.business_address || '')
+      }
+
       setSavedSuccess(true)
       setTimeout(() => setSavedSuccess(false), 4000)
     } catch (err: any) {

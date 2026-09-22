@@ -1,6 +1,6 @@
 import { getServerSession } from 'next-auth/next'
 import { authOptions } from '@/lib/auth'
-import { supabase } from '@/lib/supabase'
+import { supabaseAdmin } from '@/lib/supabase'
 
 export interface SessionUser {
   id: string
@@ -28,7 +28,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
 
   try {
     // 1. Query user from Supabase
-    const { data: existingUser, error: fetchError } = await supabase
+    const { data: existingUser, error: fetchError } = await supabaseAdmin
       .from('users')
       .select('*')
       .eq('email', email)
@@ -52,7 +52,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
 
     // 2. If user doesn't exist, create one
     const userId = (session.user as any).id || `user_${Date.now()}`
-    const { data: newUser, error: insertError } = await supabase
+    const { data: newUser, error: insertError } = await supabaseAdmin
       .from('users')
       .insert([
         {

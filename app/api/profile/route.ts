@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSessionUser } from '@/lib/authHelper'
-import { supabase } from '@/lib/supabase'
+import { supabaseAdmin } from '@/lib/supabase'
 
 export async function GET(request: NextRequest) {
   try {
@@ -9,10 +9,10 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { data: dbUser, error } = await supabase
+    const { data: dbUser, error } = await supabaseAdmin
       .from('users')
       .select('*')
-      .eq('id', user.id)
+      .eq('email', user.email)
       .single()
 
     if (error && error.code !== 'PGRST116') {
@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       user: {
-        id: user.id,
+        id: dbUser?.id || user.id,
         email: user.email,
         name: dbUser?.name || user.name,
         image: dbUser?.image || user.image,
@@ -68,27 +68,42 @@ export async function PUT(request: NextRequest) {
     if (business_phone !== undefined) updatePayload.business_phone = business_phone.trim()
     if (business_address !== undefined) updatePayload.business_address = business_address.trim()
 
-    const { data: updatedUser, error } = await supabase
+    // 1. Try updating by email or id
+    let { data: updatedUser, error } = await supabaseAdmin
       .from('users')
       .update(updatePayload)
-      .eq('id', user.id)
+      .eq('email', user.email)
       .select()
       .single()
 
-    if (error) {
-      console.error('Error updating profile in Supabase:', error)
-      // Fallback update if new columns aren't migrated in user's Supabase yet
-      const fallbackPayload: Record<string, any> = {}
-      if (name) fallbackPayload.name = name.trim()
-      if (image !== undefined) fallbackPayload.image = image
-      await supabase.from('users').update(fallbackPayload).eq('id', user.id)
+    if (error || !updatedUser) {
+      // 2. Try upserting if record is not yet in users table
+      const upsertPayload = {
+        id: user.id,
+        email: user.email,
+        name: name || user.name,
+        image: image || user.image,
+        ...updatePayload,
+      }
+
+      const { data: upsertedUser, error: upsertError } = await supabaseAdmin
+        .from('users')
+        .upsert([upsertPayload], { onConflict: 'email' })
+        .select()
+        .single()
+
+      if (upsertError) {
+        console.error('Supabase profile upsert error:', upsertError)
+      } else {
+        updatedUser = upsertedUser
+      }
     }
 
     return NextResponse.json({
       success: true,
       message: 'Profile updated successfully',
       user: {
-        id: user.id,
+        id: updatedUser?.id || user.id,
         email: user.email,
         name: updatedUser?.name || name || user.name,
         image: updatedUser?.image || image || user.image,
