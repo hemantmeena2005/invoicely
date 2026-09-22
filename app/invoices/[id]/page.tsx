@@ -204,12 +204,17 @@ export default function InvoiceViewPage() {
     }
   }
 
-  const handleToggleStatus = async (newStatus: 'paid' | 'draft' | 'sent') => {
+  const handleToggleStatus = async (newStatus: 'paid' | 'draft' | 'sent', utr?: string) => {
     setFeedbackMessage(null)
+    const updatedNotes = utr 
+      ? `${invoice?.notes || ''}\n[UPI Settlement UTR: ${utr}]`.trim() 
+      : invoice?.notes
+
     // Instant optimistic update
     setInvoice(prev => prev ? {
       ...prev,
       status: newStatus,
+      notes: updatedNotes,
       paidAt: newStatus === 'paid' ? new Date().toISOString() : undefined,
     } : prev)
 
@@ -221,7 +226,10 @@ export default function InvoiceViewPage() {
       const response = await fetch(`/api/invoices/${invoiceId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus }),
+        body: JSON.stringify({ 
+          status: newStatus,
+          notes: updatedNotes
+        }),
       })
       if (response.ok) {
         const updated = await response.json()
@@ -614,7 +622,8 @@ export default function InvoiceViewPage() {
         <UPIPaymentModal
           isOpen={isUpiModalOpen}
           onClose={() => setIsUpiModalOpen(false)}
-          onConfirmPaid={() => handleToggleStatus('paid')}
+          onConfirmPaid={(utr) => handleToggleStatus('paid', utr)}
+          invoiceId={invoiceId}
           invoiceNumber={invoice.invoiceNumber}
           amount={invoice.total}
           payeeName={userProfile?.upi_name || userProfile?.name || 'Hemant Meena'}

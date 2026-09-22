@@ -16,7 +16,7 @@ import {
   ArrowPathIcon,
   InformationCircleIcon
 } from '@heroicons/react/24/outline'
-import { buildUpiUri, buildGPayUri, buildPhonePeUri, buildPaytmUri, generateUpiQrDataUrl } from '@/lib/upiHelper'
+import { buildUpiUri, generateUpiQrDataUrl } from '@/lib/upiHelper'
 
 interface PublicInvoice {
   id: string
@@ -69,7 +69,6 @@ export default function PublicInvoicePayPage() {
   const [confirmingPaid, setConfirmingPaid] = useState(false)
   const [celebrateSuccess, setCelebrateSuccess] = useState(false)
   const [timeLeft, setTimeLeft] = useState(480) // 8 minute session timer
-  const [selectedApp, setSelectedApp] = useState<string | null>(null)
 
   useEffect(() => {
     if (invoiceId) {
@@ -220,25 +219,7 @@ export default function PublicInvoicePayPage() {
 
   const isPaid = invoice.status === 'paid'
   const payeeDisplayName = invoice.merchant.businessName || invoice.merchant.upiName || invoice.merchant.name
-  const paymentParams = {
-    upiId: invoice.merchant.upiId,
-    payeeName: payeeDisplayName,
-    amount: invoice.total,
-    invoiceNumber: invoice.invoiceNumber,
-  }
-  const upiUri = buildUpiUri(paymentParams)
-  const gpayUri = buildGPayUri(paymentParams)
-  const phonePeUri = buildPhonePeUri(paymentParams)
-  const paytmUri = buildPaytmUri(paymentParams)
-
   const currentQrImage = (activeQrType === 'custom' && invoice.merchant.upiQrCode) ? invoice.merchant.upiQrCode : qrDataUrl
-
-  const upiApps = [
-    { name: 'Google Pay', shortName: 'GPay', desc: 'Instant 1-Tap', href: gpayUri },
-    { name: 'PhonePe', shortName: 'PhonePe', desc: '1-Tap (No Limit)', href: phonePeUri },
-    { name: 'Paytm', shortName: 'Paytm', desc: 'Fast Pay', href: paytmUri },
-    { name: 'BHIM / Any UPI', shortName: 'All UPI', desc: 'Any App', href: upiUri },
-  ]
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 selection:bg-primary-500 selection:text-white pb-20">
@@ -445,42 +426,12 @@ export default function PublicInvoicePayPage() {
                     </div>
                   </div>
 
-                  <div className="space-y-5 pt-1">
-                    {/* 1. UPI App Launchers (Mobile 1-Tap) */}
-                    <div className="space-y-2">
+                  <div className="space-y-4 pt-1">
+                    {/* 1. QR Code Display */}
+                    <div className="space-y-3">
                       <div className="flex items-center justify-between">
                         <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                          Select UPI App to Pay
-                        </span>
-                        <span className="text-[10px] text-emerald-400 font-semibold">0% Surcharge</span>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        {upiApps.map((app) => (
-                          <a
-                            key={app.name}
-                            href={app.href}
-                            onClick={() => setSelectedApp(app.name)}
-                            className={`p-2.5 rounded-xl border border-slate-800 bg-slate-950/80 hover:border-indigo-500 hover:bg-indigo-950/30 transition-all flex items-center gap-2.5 cursor-pointer ${
-                              selectedApp === app.name ? 'ring-2 ring-indigo-500 bg-indigo-950/50' : ''
-                            }`}
-                          >
-                            <div className="h-7 w-7 rounded-lg bg-slate-900 border border-slate-700 flex items-center justify-center text-indigo-400">
-                              <QrCodeIcon className="h-4 w-4" />
-                            </div>
-                            <div className="text-left">
-                              <p className="text-xs font-bold text-white leading-none">{app.shortName}</p>
-                              <p className="text-[10px] text-slate-400 mt-0.5">{app.desc}</p>
-                            </div>
-                          </a>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* 2. QR Code Display */}
-                    <div className="pt-2 border-t border-slate-800/80 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                          Or Scan QR Code
+                          Scan QR Code to Pay
                         </span>
                         {invoice.merchant.upiQrCode && (
                           <div className="flex p-0.5 bg-slate-950 rounded-lg border border-slate-800 text-[10px] font-bold">
@@ -506,25 +457,25 @@ export default function PublicInvoicePayPage() {
                         )}
                       </div>
 
-                      <div className="flex flex-col items-center justify-center p-3 bg-slate-950 rounded-2xl border border-slate-800">
+                      <div className="flex flex-col items-center justify-center p-4 bg-slate-950 rounded-2xl border border-slate-800">
                         <div className="p-3 bg-white rounded-2xl border-2 border-dashed border-indigo-300 shadow-xl">
                           {currentQrImage ? (
                             // eslint-disable-next-line @next/next/no-img-element
                             <img
                               src={currentQrImage}
                               alt="Scan to Pay UPI"
-                              className="w-44 h-44 sm:w-48 sm:h-48 object-contain rounded-xl"
+                              className="w-48 h-48 sm:w-56 sm:h-56 object-contain rounded-xl"
                             />
                           ) : (
-                            <div className="w-44 h-44 flex items-center justify-center bg-slate-100 rounded-xl">
+                            <div className="w-48 h-48 flex items-center justify-center bg-slate-100 rounded-xl">
                               <ArrowPathIcon className="h-8 w-8 text-primary-600 animate-spin" />
                             </div>
                           )}
                         </div>
 
-                        <div className="flex items-center gap-1.5 mt-2.5 text-[11px] text-slate-400">
-                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                          <span>Auto-verifying payment in real-time</span>
+                        <div className="flex items-center gap-1.5 mt-3 text-xs text-slate-400">
+                          <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+                          <span>Scan with Google Pay, PhonePe, Paytm, Navi or any UPI app</span>
                         </div>
                       </div>
                     </div>

@@ -5,21 +5,20 @@ import {
   XMarkIcon, 
   CheckIcon, 
   DocumentDuplicateIcon, 
-  ArrowTopRightOnSquareIcon,
-  SparklesIcon,
-  PencilSquareIcon,
   QrCodeIcon,
   ClockIcon,
   ArrowPathIcon,
   InformationCircleIcon,
-  ShieldCheckIcon
+  ShieldCheckIcon,
+  PencilSquareIcon
 } from '@heroicons/react/24/outline'
-import { buildUpiUri, buildGPayUri, buildPhonePeUri, buildPaytmUri, generateUpiQrDataUrl } from '@/lib/upiHelper'
+import { buildUpiUri, generateUpiQrDataUrl } from '@/lib/upiHelper'
 
 interface UPIPaymentModalProps {
   isOpen: boolean
   onClose: () => void
-  onConfirmPaid: () => Promise<void> | void
+  onConfirmPaid: (utr?: string) => Promise<void> | void
+  invoiceId?: string
   invoiceNumber: string
   amount: number
   payeeName?: string
@@ -31,6 +30,7 @@ export default function UPIPaymentModal({
   isOpen,
   onClose,
   onConfirmPaid,
+  invoiceId,
   invoiceNumber,
   amount,
   payeeName = 'Hemant Meena',
@@ -40,13 +40,14 @@ export default function UPIPaymentModal({
   const [upiId, setUpiId] = useState(initialUpiId)
   const [isEditingUpi, setIsEditingUpi] = useState(false)
   const [qrDataUrl, setQrDataUrl] = useState<string>('')
-  const [copied, setCopied] = useState(false)
+  const [copiedUpi, setCopiedUpi] = useState(false)
   const [copiedAmount, setCopiedAmount] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [paidSuccess, setPaidSuccess] = useState(false)
   const [activeQrTab, setActiveQrTab] = useState<'dynamic' | 'custom'>(customQrUrl ? 'custom' : 'dynamic')
   const [timeLeft, setTimeLeft] = useState(480) // 8 minutes session timer
-  const [selectedApp, setSelectedApp] = useState<string | null>(null)
+  const [utrInput, setUtrInput] = useState('')
+  const [utrError, setUtrError] = useState<string | null>(null)
 
   useEffect(() => {
     if (initialUpiId) {
@@ -67,7 +68,8 @@ export default function UPIPaymentModal({
     if (!isOpen) {
       setTimeLeft(480)
       setPaidSuccess(false)
-      setSelectedApp(null)
+      setUtrInput('')
+      setUtrError(null)
       return
     }
 
@@ -85,14 +87,9 @@ export default function UPIPaymentModal({
     invoiceNumber,
   }
 
-  const upiUri = buildUpiUri(paymentParams)
-  const gpayUri = buildGPayUri(paymentParams)
-  const phonePeUri = buildPhonePeUri(paymentParams)
-  const paytmUri = buildPaytmUri(paymentParams)
-
   useEffect(() => {
     if (isOpen) {
-      generateUpiQrDataUrl(paymentParams, 260).then(url => setQrDataUrl(url))
+      generateUpiQrDataUrl(paymentParams, 280).then(url => setQrDataUrl(url))
     }
   }, [isOpen, upiId, payeeName, amount, invoiceNumber])
 
@@ -106,8 +103,8 @@ export default function UPIPaymentModal({
 
   const handleCopyUpi = () => {
     navigator.clipboard.writeText(upiId)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+    setCopiedUpi(true)
+    setTimeout(() => setCopiedUpi(false), 2000)
   }
 
   const handleCopyAmount = () => {
@@ -117,61 +114,48 @@ export default function UPIPaymentModal({
   }
 
   const handleConfirm = async () => {
+    const cleanUtr = utrInput.trim()
+    if (cleanUtr && cleanUtr.length < 10) {
+      setUtrError('Please enter a valid 12-digit UPI reference number (UTR).')
+      return
+    }
+
     try {
       setConfirming(true)
-      await onConfirmPaid()
+      setUtrError(null)
+
+      if (invoiceId && cleanUtr) {
+        // Call backend verification if invoiceId is available
+        const res = await fetch(`/api/pay/${invoiceId}/verify`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ utr: cleanUtr }),
+        })
+        if (!res.ok) {
+          const errData = await res.json()
+          throw new Error(errData.error || 'Failed to verify UTR')
+        }
+      }
+
+      await onConfirmPaid(cleanUtr || undefined)
       setPaidSuccess(true)
       setTimeout(() => {
         setConfirming(false)
         onClose()
       }, 1800)
-    } catch (e) {
+    } catch (e: any) {
       console.error('Failed to confirm payment:', e)
+      setUtrError(e.message || 'Verification failed. Please try again.')
       setConfirming(false)
     }
   }
 
   const activeDisplayQr = (activeQrTab === 'custom' && customQrUrl) ? customQrUrl : qrDataUrl
 
-  const upiApps = [
-    {
-      name: 'Google Pay',
-      shortName: 'GPay',
-      color: 'hover:border-blue-500 hover:bg-blue-50/50',
-      badge: 'bg-blue-600 text-white',
-      desc: 'Instant 1-Tap',
-      href: gpayUri,
-    },
-    {
-      name: 'PhonePe',
-      shortName: 'PhonePe',
-      color: 'hover:border-purple-500 hover:bg-purple-50/50',
-      badge: 'bg-purple-700 text-white',
-      desc: '1-Tap (No Limit)',
-      href: phonePeUri,
-    },
-    {
-      name: 'Paytm',
-      shortName: 'Paytm',
-      color: 'hover:border-sky-500 hover:bg-sky-50/50',
-      badge: 'bg-sky-500 text-white',
-      desc: 'Fast Pay',
-      href: paytmUri,
-    },
-    {
-      name: 'BHIM / Any UPI',
-      shortName: 'All UPI',
-      color: 'hover:border-emerald-500 hover:bg-emerald-50/50',
-      badge: 'bg-emerald-600 text-white',
-      desc: 'Any App',
-      href: upiUri,
-    },
-  ]
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-md animate-fade-in">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-md animate-fade-in">
       <div 
-        className="relative w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-slate-200/80 overflow-hidden animate-scale-in"
+        className="relative w-full max-w-md bg-white rounded-3xl shadow-2xl border border-slate-200/90 overflow-hidden animate-scale-in"
         onClick={(e) => e.stopPropagation()}
       >
         {paidSuccess ? (
@@ -181,20 +165,25 @@ export default function UPIPaymentModal({
               <CheckIcon className="h-10 w-10 stroke-[3]" />
             </div>
             <div className="space-y-1">
-              <h2 className="text-2xl font-black text-slate-900 tracking-tight">Payment Verified!</h2>
+              <h2 className="text-2xl font-black text-slate-900 tracking-tight">Payment Recorded!</h2>
               <p className="text-sm font-semibold text-emerald-600">
-                ₹{amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })} has been marked as PAID
+                ₹{amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })} marked as PAID
               </p>
-              <p className="text-xs text-slate-400">Updating your invoice and dispatching settlement records...</p>
+              {utrInput && (
+                <p className="text-xs font-mono text-slate-500 mt-1">
+                  UTR: {utrInput}
+                </p>
+              )}
+              <p className="text-xs text-slate-400">Updating your invoice records...</p>
             </div>
           </div>
         ) : (
           <>
             {/* Top Checkout Header */}
-            <div className="relative px-6 pt-6 pb-5 bg-gradient-to-br from-indigo-950 via-slate-900 to-primary-950 text-white">
+            <div className="relative px-6 pt-5 pb-5 bg-gradient-to-br from-indigo-950 via-slate-900 to-primary-950 text-white">
               <button
                 onClick={onClose}
-                className="absolute top-5 right-5 p-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white/80 hover:text-white transition-colors"
+                className="absolute top-4 right-4 p-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white/80 hover:text-white transition-colors"
               >
                 <XMarkIcon className="h-5 w-5" />
               </button>
@@ -202,7 +191,7 @@ export default function UPIPaymentModal({
               <div className="flex items-center justify-between gap-2 mb-2">
                 <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold text-[11px] border border-emerald-400/30 flex items-center gap-1.5">
                   <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-                  Live NPCI Checkout
+                  UPI Direct QR
                 </span>
 
                 {/* Session Expiry Timer */}
@@ -212,13 +201,13 @@ export default function UPIPaymentModal({
                 </div>
               </div>
 
-              <h2 className="text-xl font-extrabold tracking-tight">Select UPI Payment Method</h2>
+              <h2 className="text-xl font-extrabold tracking-tight">Pay via UPI QR</h2>
               <p className="text-xs text-indigo-200/80 mt-0.5">
-                Paying <strong className="text-white">{payeeName}</strong> for <strong className="text-white">{invoiceNumber}</strong>
+                Invoice <strong className="text-white">{invoiceNumber}</strong> • Payee <strong className="text-white">{payeeName}</strong>
               </p>
 
-              <div className="mt-4 pt-3 border-t border-white/10 flex items-baseline justify-between">
-                <span className="text-xs text-indigo-200 font-medium">Exact Amount Due:</span>
+              <div className="mt-3 pt-3 border-t border-white/10 flex items-baseline justify-between">
+                <span className="text-xs text-indigo-200 font-medium">Exact Amount:</span>
                 <div className="flex items-center gap-2">
                   <span className="text-2xl font-black text-emerald-400 tracking-tight">
                     ₹{amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
@@ -226,7 +215,7 @@ export default function UPIPaymentModal({
                   <button
                     onClick={handleCopyAmount}
                     title="Copy Amount"
-                    className="p-1 rounded bg-white/10 hover:bg-white/20 text-xs text-emerald-200"
+                    className="p-1 rounded-md bg-white/10 hover:bg-white/20 text-xs text-emerald-200 transition-colors"
                   >
                     {copiedAmount ? <CheckIcon className="h-3.5 w-3.5 text-emerald-400" /> : <DocumentDuplicateIcon className="h-3.5 w-3.5" />}
                   </button>
@@ -235,40 +224,12 @@ export default function UPIPaymentModal({
             </div>
 
             {/* Modal Body */}
-            <div className="p-6 space-y-5 max-h-[80vh] overflow-y-auto">
-              {/* 1. UPI App Selector Grid (Mobile 1-Tap Launchers) */}
+            <div className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
+              {/* 1. High-Res QR Code Display */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                    1. Tap to Pay in UPI App (Mobile)
-                  </span>
-                  <span className="text-[10px] text-emerald-600 font-semibold">0% Surcharge</span>
-                </div>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                  {upiApps.map((app) => (
-                    <a
-                      key={app.name}
-                      href={app.href}
-                      onClick={() => setSelectedApp(app.name)}
-                      className={`p-3 rounded-2xl border border-slate-200/80 flex flex-col items-center text-center transition-all duration-200 group cursor-pointer ${app.color} ${
-                        selectedApp === app.name ? 'ring-2 ring-indigo-600 bg-indigo-50/50' : 'bg-slate-50/60'
-                      }`}
-                    >
-                      <div className="h-8 w-8 rounded-xl bg-white shadow-sm flex items-center justify-center p-1 border border-slate-100 group-hover:scale-110 transition-transform">
-                        <QrCodeIcon className="h-5 w-5 text-indigo-600" />
-                      </div>
-                      <span className="text-xs font-extrabold text-slate-800 mt-2">{app.shortName}</span>
-                      <span className="text-[10px] text-slate-400 font-medium">{app.desc}</span>
-                    </a>
-                  ))}
-                </div>
-              </div>
-
-              {/* 2. QR Code Display Section (Desktop & Alternative) */}
-              <div className="pt-2 border-t border-slate-100 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                    2. Or Scan QR Code to Pay
+                    Scan QR to Pay
                   </span>
                   {customQrUrl && (
                     <div className="flex p-0.5 bg-slate-100 rounded-lg text-[10px] font-bold">
@@ -295,16 +256,16 @@ export default function UPIPaymentModal({
                 </div>
 
                 <div className="flex flex-col items-center justify-center p-4 bg-slate-50 rounded-2xl border border-slate-200/80">
-                  <div className="relative p-3 bg-white rounded-2xl border-2 border-dashed border-indigo-200 shadow-sm group">
+                  <div className="p-3 bg-white rounded-2xl border-2 border-dashed border-indigo-200 shadow-sm">
                     {activeDisplayQr ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img 
                         src={activeDisplayQr} 
                         alt="UPI QR Code" 
-                        className="w-44 h-44 sm:w-48 sm:h-48 object-contain rounded-xl"
+                        className="w-48 h-48 sm:w-52 sm:h-52 object-contain rounded-xl"
                       />
                     ) : (
-                      <div className="w-44 h-44 flex items-center justify-center bg-slate-50 rounded-xl">
+                      <div className="w-48 h-48 flex items-center justify-center bg-slate-50 rounded-xl">
                         <ArrowPathIcon className="h-8 w-8 text-indigo-600 animate-spin" />
                       </div>
                     )}
@@ -312,12 +273,12 @@ export default function UPIPaymentModal({
 
                   <div className="flex items-center gap-1.5 mt-3 text-xs text-slate-500 font-medium">
                     <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-                    <span>Scan with any UPI app on phone</span>
+                    <span>Scan with any UPI app (GPay, PhonePe, Paytm, Navi, BHIM)</span>
                   </div>
                 </div>
               </div>
 
-              {/* 3. Beneficiary UPI ID Pill */}
+              {/* 2. Beneficiary UPI ID Card */}
               <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-1.5">
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-bold text-slate-500 uppercase tracking-wider text-[10px]">Beneficiary UPI ID</span>
@@ -346,7 +307,7 @@ export default function UPIPaymentModal({
                       onClick={handleCopyUpi}
                       className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-slate-700 text-xs font-semibold hover:bg-slate-100 flex items-center gap-1 shadow-sm transition-all"
                     >
-                      {copied ? (
+                      {copiedUpi ? (
                         <>
                           <CheckIcon className="h-3.5 w-3.5 text-emerald-600" />
                           <span className="text-emerald-700">Copied</span>
@@ -362,19 +323,42 @@ export default function UPIPaymentModal({
                 )}
               </div>
 
-              {/* UPI & Banking Tips Callout */}
-              <div className="p-3 rounded-2xl bg-indigo-50/70 border border-indigo-100/80 text-[11px] text-indigo-900 space-y-1">
-                <div className="flex items-center gap-1.5 font-bold text-indigo-950">
-                  <InformationCircleIcon className="h-4 w-4 text-indigo-600 flex-shrink-0" />
-                  <span>UPI Payment & Limit Guidance</span>
+              {/* 3. 12-Digit Bank UTR / Reference Number Input */}
+              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-[11px] font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                    <ShieldCheckIcon className="h-4 w-4 text-emerald-600" />
+                    Enter 12-Digit Bank UTR / Ref No
+                  </label>
+                  <span className="text-[10px] text-slate-400 font-mono">
+                    {utrInput.length}/12
+                  </span>
                 </div>
-                <ul className="list-disc list-inside space-y-0.5 text-indigo-900/80 text-[10px] pl-1">
-                  <li><strong>Amounts &gt; ₹2,000:</strong> Tap the app button above or scan QR with camera (PhonePe caps photo-gallery uploads to ₹2,000).</li>
-                  <li><strong>Bank Limit Warning:</strong> If your bank shows a daily limit on GPay, use PhonePe/Paytm or copy the UPI ID directly.</li>
-                </ul>
+
+                <input
+                  type="text"
+                  maxLength={16}
+                  value={utrInput}
+                  onChange={(e) => {
+                    setUtrInput(e.target.value.replace(/[^0-9a-zA-Z]/g, ''))
+                    setUtrError(null)
+                  }}
+                  placeholder="e.g. 426718902345 (optional for manual mark)"
+                  className="input-field text-xs py-2 px-3 bg-white font-mono tracking-wider placeholder:tracking-normal placeholder:text-slate-400"
+                />
+
+                {utrError && (
+                  <div className="p-2 rounded-xl bg-rose-50 border border-rose-200 text-rose-600 text-xs font-medium">
+                    {utrError}
+                  </div>
+                )}
+
+                <p className="text-[10px] text-slate-400">
+                  Find the 12-digit UPI Ref / UTR No on your GPay, PhonePe, Paytm, or Navi receipt
+                </p>
               </div>
 
-              {/* 4. Live Verification Indicator & 1-Click Confirmation */}
+              {/* 4. Action Buttons */}
               <div className="space-y-2 pt-1">
                 <button
                   onClick={handleConfirm}
@@ -384,18 +368,18 @@ export default function UPIPaymentModal({
                   {confirming ? (
                     <>
                       <ArrowPathIcon className="h-4 w-4 animate-spin" />
-                      <span>Verifying Payment...</span>
+                      <span>Verifying & Recording Payment...</span>
                     </>
                   ) : (
                     <>
                       <CheckIcon className="h-4 w-4 stroke-[3]" />
-                      <span>I Have Completed Payment — Mark Paid</span>
+                      <span>{utrInput.trim() ? 'Verify UTR & Mark Paid' : 'I Have Completed Payment — Mark Paid'}</span>
                     </>
                   )}
                 </button>
 
-                <p className="text-center text-[11px] text-slate-400 font-medium">
-                  Continuous live polling active • Invoice updates automatically once paid
+                <p className="text-center text-[10px] text-slate-400 font-medium">
+                  Direct bank settlement • 0% platform commission
                 </p>
               </div>
             </div>
