@@ -2,23 +2,19 @@
 
 import { useState, useEffect } from 'react'
 import { useParams, useSearchParams } from 'next/navigation'
-import Link from 'next/link'
 import {
   DocumentTextIcon,
-  CreditCardIcon,
-  ArrowDownTrayIcon,
   CheckCircleIcon,
-  SparklesIcon,
-  QrCodeIcon,
-  ArrowTopRightOnSquareIcon,
-  DocumentDuplicateIcon,
-  BuildingOfficeIcon,
-  UserCircleIcon,
   ClockIcon,
+  QrCodeIcon,
+  ArrowDownTrayIcon,
+  ArrowTopRightOnSquareIcon,
+  SparklesIcon,
   ShieldCheckIcon,
+  DocumentDuplicateIcon,
   CheckIcon,
-  InformationCircleIcon,
-  ArrowPathIcon
+  ArrowPathIcon,
+  InformationCircleIcon
 } from '@heroicons/react/24/outline'
 import { buildUpiUri, generateUpiQrDataUrl } from '@/lib/upiHelper'
 
@@ -43,9 +39,9 @@ interface PublicInvoice {
   }>
   client: {
     name: string
-    email?: string
+    email: string
     company?: string
-    address?: any
+    phone?: string
   }
   merchant: {
     name: string
@@ -59,7 +55,7 @@ interface PublicInvoice {
   }
 }
 
-export default function PublicPayPage() {
+export default function PublicInvoicePayPage() {
   const params = useParams()
   const searchParams = useSearchParams()
   const invoiceId = params.id as string
@@ -68,14 +64,35 @@ export default function PublicPayPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [qrDataUrl, setQrDataUrl] = useState<string>('')
-  const [copied, setCopied] = useState(false)
   const [activeQrType, setActiveQrType] = useState<'dynamic' | 'custom'>('dynamic')
+  const [copied, setCopied] = useState(false)
   const [confirmingPaid, setConfirmingPaid] = useState(false)
   const [celebrateSuccess, setCelebrateSuccess] = useState(false)
+  const [timeLeft, setTimeLeft] = useState(480) // 8 minute session timer
+  const [selectedApp, setSelectedApp] = useState<string | null>(null)
 
   useEffect(() => {
-    fetchPublicInvoice()
-  }, [invoiceId])
+    if (invoiceId) {
+      fetchPublicInvoice()
+    }
+
+    // Continuous Real-Time Payment Polling (every 3 seconds)
+    const interval = setInterval(() => {
+      if (invoice?.status !== 'paid') {
+        fetchPublicInvoice(true)
+      }
+    }, 3000)
+
+    return () => clearInterval(interval)
+  }, [invoiceId, invoice?.status])
+
+  // Session timer
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setTimeLeft((prev) => (prev > 0 ? prev - 1 : 0))
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [])
 
   useEffect(() => {
     if (searchParams.get('success') === 'true') {
@@ -84,35 +101,49 @@ export default function PublicPayPage() {
     }
   }, [searchParams])
 
-  const fetchPublicInvoice = async () => {
+  const formatTimer = (seconds: number) => {
+    const mins = Math.floor(seconds / 60)
+    const secs = seconds % 60
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
+  }
+
+  const fetchPublicInvoice = async (silent = false) => {
     try {
-      setLoading(true)
+      if (!silent) setLoading(true)
       const res = await fetch(`/api/pay/${invoiceId}`)
       if (!res.ok) {
         throw new Error('Invoice not found or expired')
       }
       const data = await res.json()
-      setInvoice(data.invoice)
+      
+      setInvoice((prev) => {
+        if (prev?.status !== 'paid' && data.invoice.status === 'paid') {
+          setCelebrateSuccess(true)
+        }
+        return data.invoice
+      })
 
-      if (data.invoice.merchant.upiQrCode) {
+      if (data.invoice.merchant.upiQrCode && !silent) {
         setActiveQrType('custom')
       }
 
       // Generate dynamic UPI QR
-      generateUpiQrDataUrl({
-        upiId: data.invoice.merchant.upiId || 'hemantmeena2005@oksbi',
-        payeeName: data.invoice.merchant.upiName || data.invoice.merchant.name,
-        amount: data.invoice.total,
-        invoiceNumber: data.invoice.invoiceNumber,
-      }, 280).then((url) => setQrDataUrl(url))
+      if (!silent || !qrDataUrl) {
+        generateUpiQrDataUrl({
+          upiId: data.invoice.merchant.upiId || 'hemantmeena2005@oksbi',
+          payeeName: data.invoice.merchant.upiName || data.invoice.merchant.name,
+          amount: data.invoice.total,
+          invoiceNumber: data.invoice.invoiceNumber,
+        }, 280).then((url) => setQrDataUrl(url))
+      }
 
       if (data.invoice.status === 'paid') {
         setCelebrateSuccess(true)
       }
     } catch (err: any) {
-      setError(err.message || 'Failed to load invoice')
+      if (!silent) setError(err.message || 'Failed to load invoice')
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }
 
@@ -146,7 +177,7 @@ export default function PublicPayPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
         <div className="flex flex-col items-center gap-3">
           <div className="h-12 w-12 rounded-2xl bg-gradient-to-tr from-primary-600 to-indigo-500 animate-pulse-glow flex items-center justify-center shadow-glow-primary">
             <DocumentTextIcon className="h-6 w-6 text-white animate-spin" />
@@ -159,13 +190,13 @@ export default function PublicPayPage() {
 
   if (error || !invoice) {
     return (
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
-        <div className="card p-8 max-w-md w-full text-center space-y-4 shadow-2xl">
-          <div className="h-14 w-14 rounded-2xl bg-rose-50 text-rose-600 mx-auto flex items-center justify-center">
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
+        <div className="card p-8 max-w-md w-full text-center space-y-4 shadow-2xl bg-slate-900 border border-slate-800">
+          <div className="h-14 w-14 rounded-2xl bg-rose-950/80 text-rose-400 mx-auto flex items-center justify-center border border-rose-800/60">
             <InformationCircleIcon className="h-8 w-8" />
           </div>
-          <h2 className="text-xl font-bold text-slate-900">Invoice Unavailable</h2>
-          <p className="text-sm text-slate-500">{error || 'This invoice does not exist or has been removed.'}</p>
+          <h2 className="text-xl font-bold text-white">Invoice Unavailable</h2>
+          <p className="text-sm text-slate-400">{error || 'This invoice does not exist or has been removed.'}</p>
         </div>
       </div>
     )
@@ -182,6 +213,13 @@ export default function PublicPayPage() {
 
   const currentQrImage = (activeQrType === 'custom' && invoice.merchant.upiQrCode) ? invoice.merchant.upiQrCode : qrDataUrl
 
+  const upiApps = [
+    { name: 'Google Pay', shortName: 'GPay', desc: 'Instant 1-Tap' },
+    { name: 'PhonePe', shortName: 'PhonePe', desc: 'Popular' },
+    { name: 'Paytm', shortName: 'Paytm', desc: 'Fast Pay' },
+    { name: 'BHIM / Any UPI', shortName: 'All UPI', desc: 'Any App' },
+  ]
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 selection:bg-primary-500 selection:text-white pb-20">
       {/* Ambient background glow */}
@@ -189,7 +227,7 @@ export default function PublicPayPage() {
 
       {/* Top Header Bar */}
       <header className="relative z-10 border-b border-slate-800/80 bg-slate-950/80 backdrop-blur-xl">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 h-18 py-4 flex items-center justify-between">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-18 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <div className="h-9 w-9 rounded-xl bg-gradient-to-tr from-primary-600 to-indigo-500 flex items-center justify-center shadow-glow-primary">
               <DocumentTextIcon className="h-5 w-5 text-white" />
@@ -214,37 +252,43 @@ export default function PublicPayPage() {
       </header>
 
       {/* Main Payment Container */}
-      <main className="relative z-10 max-w-5xl mx-auto px-4 sm:px-6 pt-8 space-y-6">
+      <main className="relative z-10 max-w-6xl mx-auto px-4 sm:px-6 pt-8 space-y-6">
         {/* Payment Celebration Banner */}
         {celebrateSuccess && (
-          <div className="p-5 rounded-3xl bg-gradient-to-r from-emerald-950/80 via-emerald-900/60 to-slate-900 border border-emerald-500/40 text-emerald-100 shadow-2xl animate-fade-in flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div className="flex items-center gap-3.5 text-center sm:text-left">
-              <div className="h-12 w-12 rounded-2xl bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center text-emerald-300 flex-shrink-0">
-                <CheckCircleIcon className="h-7 w-7 stroke-[2.5]" />
+          <div className="p-5 rounded-3xl bg-gradient-to-r from-emerald-950/90 via-emerald-900/70 to-slate-900 border border-emerald-500/40 text-emerald-100 shadow-2xl animate-fade-in flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="h-12 w-12 rounded-2xl bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center flex-shrink-0 text-emerald-400 shadow-glow-primary">
+                <SparklesIcon className="h-7 w-7 animate-spin-slow" />
               </div>
               <div>
-                <h3 className="text-base font-extrabold text-white">Payment Completed!</h3>
+                <h3 className="font-black text-lg text-white">Payment Successfully Verified!</h3>
                 <p className="text-xs text-emerald-200/90 mt-0.5">
-                  Thank you! Payment for <strong className="text-white">{invoice.invoiceNumber}</strong> has been successfully processed.
+                  Your settlement of <strong className="text-white font-black">₹{invoice.total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong> has been confirmed and recorded.
                 </p>
               </div>
             </div>
-            <span className="px-3.5 py-1.5 rounded-full bg-emerald-400/20 text-emerald-300 text-xs font-bold border border-emerald-400/30 whitespace-nowrap">
-              ✓ Verified Paid
-            </span>
+            <a
+              href={`/api/pay/${invoice.id}/pdf`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-5 py-2.5 rounded-xl bg-emerald-500 text-slate-950 font-extrabold text-xs hover:bg-emerald-400 transition-colors shadow-md flex items-center gap-1.5"
+            >
+              <ArrowDownTrayIcon className="h-4 w-4 stroke-[2.5]" />
+              Official Receipt
+            </a>
           </div>
         )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Left Column: Invoice Overview & Item Breakdown (7 Cols) */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+          {/* Left Column: Official Invoice Details Sheet (7 Cols) */}
           <div className="lg:col-span-7 space-y-6">
-            <div className="bg-slate-900/90 backdrop-blur-md rounded-3xl border border-slate-800/90 p-6 sm:p-7 shadow-xl space-y-6">
-              {/* Header Info */}
-              <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-800 pb-5">
+            <div className="bg-slate-900/80 backdrop-blur-md rounded-3xl border border-slate-800/80 p-6 sm:p-8 space-y-6 shadow-xl">
+              {/* Header inside invoice */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-800">
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Invoice</span>
-                    <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase border ${
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Invoice</span>
+                    <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider border ${
                       isPaid
                         ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
                         : 'bg-amber-500/10 text-amber-400 border-amber-500/30'
@@ -344,21 +388,21 @@ export default function PublicPayPage() {
             <div className="bg-slate-900/90 backdrop-blur-md rounded-3xl border border-slate-800/90 shadow-2xl p-6 sm:p-7 sticky top-6 space-y-6">
               {isPaid ? (
                 <div className="text-center py-8 space-y-4">
-                  <div className="h-16 w-16 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-400/30 flex items-center justify-center mx-auto">
+                  <div className="h-16 w-16 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-400/30 flex items-center justify-center mx-auto shadow-lg shadow-emerald-500/20">
                     <CheckCircleIcon className="h-10 w-10 stroke-[2.5]" />
                   </div>
                   <h3 className="text-xl font-black text-white">Invoice Already Paid</h3>
                   <p className="text-xs text-slate-400 max-w-xs mx-auto">
-                    No further payment is required for this invoice. You can download the official receipt below.
+                    Payment has been verified and settled directly into the merchant account.
                   </p>
                   <a
                     href={`/api/pay/${invoice.id}/pdf`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="btn-primary w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-sm font-bold flex items-center justify-center gap-2 mt-4"
+                    className="btn-primary w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-sm font-bold flex items-center justify-center gap-2 mt-4 cursor-pointer"
                   >
                     <ArrowDownTrayIcon className="h-4 w-4" />
-                    Download Payment Receipt
+                    Download Official Receipt
                   </a>
                 </div>
               ) : (
@@ -367,69 +411,102 @@ export default function PublicPayPage() {
                     <div>
                       <h2 className="text-lg font-bold text-white flex items-center gap-2">
                         <QrCodeIcon className="h-5 w-5 text-emerald-400" />
-                        Pay via UPI
+                        Live UPI Checkout
                       </h2>
                       <p className="text-xs text-slate-400 mt-0.5">
-                        Scan with Google Pay, PhonePe, Paytm, or BHIM
+                        Scan or tap to pay directly via UPI
                       </p>
                     </div>
-                    <span className="px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 font-bold text-[11px] border border-emerald-400/30">
-                      0% Gateway Fees
-                    </span>
+
+                    {/* Expiry Timer */}
+                    <div className="flex items-center gap-1 text-xs font-mono font-bold text-amber-300 bg-amber-950/60 px-2.5 py-1 rounded-lg border border-amber-500/30">
+                      <ClockIcon className="h-3.5 w-3.5" />
+                      <span>{formatTimer(timeLeft)}</span>
+                    </div>
                   </div>
 
-                  <div className="space-y-5 pt-2">
-                    {/* QR Switcher if user uploaded custom QR */}
-                    {invoice.merchant.upiQrCode && (
-                      <div className="flex p-0.5 bg-slate-950 rounded-xl border border-slate-800 text-[11px] font-semibold">
-                        <button
-                          type="button"
-                          onClick={() => setActiveQrType('custom')}
-                          className={`flex-1 py-1 rounded-lg transition-colors ${
-                            activeQrType === 'custom' ? 'bg-indigo-600 text-white' : 'text-slate-400'
-                          }`}
-                        >
-                          Merchant Custom QR
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setActiveQrType('dynamic')}
-                          className={`flex-1 py-1 rounded-lg transition-colors ${
-                            activeQrType === 'dynamic' ? 'bg-indigo-600 text-white' : 'text-slate-400'
-                          }`}
-                        >
-                          Dynamic ₹{invoice.total} QR
-                        </button>
+                  <div className="space-y-5 pt-1">
+                    {/* 1. UPI App Launchers (Mobile 1-Tap) */}
+                    <div className="space-y-2">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                        Select UPI App to Pay
+                      </span>
+                      <div className="grid grid-cols-2 gap-2">
+                        {upiApps.map((app) => (
+                          <a
+                            key={app.name}
+                            href={upiUri}
+                            onClick={() => setSelectedApp(app.name)}
+                            className={`p-2.5 rounded-xl border border-slate-800 bg-slate-950/80 hover:border-indigo-500 hover:bg-indigo-950/30 transition-all flex items-center gap-2.5 cursor-pointer ${
+                              selectedApp === app.name ? 'ring-2 ring-indigo-500 bg-indigo-950/50' : ''
+                            }`}
+                          >
+                            <div className="h-7 w-7 rounded-lg bg-slate-900 border border-slate-700 flex items-center justify-center text-indigo-400">
+                              <QrCodeIcon className="h-4 w-4" />
+                            </div>
+                            <div className="text-left">
+                              <p className="text-xs font-bold text-white leading-none">{app.shortName}</p>
+                              <p className="text-[10px] text-slate-400 mt-0.5">{app.desc}</p>
+                            </div>
+                          </a>
+                        ))}
                       </div>
-                    )}
+                    </div>
 
-                    {/* QR Display Container */}
-                    <div className="flex flex-col items-center justify-center">
-                      <div className="p-3 bg-white rounded-2xl border-2 border-dashed border-indigo-300 shadow-xl">
-                        {currentQrImage ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={currentQrImage}
-                            alt="Scan to Pay UPI"
-                            className="w-48 h-48 sm:w-52 sm:h-52 object-contain rounded-xl"
-                          />
-                        ) : (
-                          <div className="w-48 h-48 flex items-center justify-center bg-slate-100 rounded-xl">
-                            <ArrowPathIcon className="h-8 w-8 text-primary-600 animate-spin" />
+                    {/* 2. QR Code Display */}
+                    <div className="pt-2 border-t border-slate-800/80 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                          Or Scan QR Code
+                        </span>
+                        {invoice.merchant.upiQrCode && (
+                          <div className="flex p-0.5 bg-slate-950 rounded-lg border border-slate-800 text-[10px] font-bold">
+                            <button
+                              type="button"
+                              onClick={() => setActiveQrType('dynamic')}
+                              className={`px-2 py-0.5 rounded-md transition-all ${
+                                activeQrType === 'dynamic' ? 'bg-indigo-600 text-white' : 'text-slate-400'
+                              }`}
+                            >
+                              Dynamic ₹{invoice.total}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setActiveQrType('custom')}
+                              className={`px-2 py-0.5 rounded-md transition-all ${
+                                activeQrType === 'custom' ? 'bg-indigo-600 text-white' : 'text-slate-400'
+                              }`}
+                            >
+                              Merchant QR
+                            </button>
                           </div>
                         )}
                       </div>
 
-                      {/* Supported apps */}
-                      <div className="flex items-center gap-1.5 mt-3 text-[10px] font-bold text-slate-400">
-                        <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300">Google Pay</span>
-                        <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300">PhonePe</span>
-                        <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300">Paytm</span>
-                        <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300">BHIM</span>
+                      <div className="flex flex-col items-center justify-center p-3 bg-slate-950 rounded-2xl border border-slate-800">
+                        <div className="p-3 bg-white rounded-2xl border-2 border-dashed border-indigo-300 shadow-xl">
+                          {currentQrImage ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={currentQrImage}
+                              alt="Scan to Pay UPI"
+                              className="w-44 h-44 sm:w-48 sm:h-48 object-contain rounded-xl"
+                            />
+                          ) : (
+                            <div className="w-44 h-44 flex items-center justify-center bg-slate-100 rounded-xl">
+                              <ArrowPathIcon className="h-8 w-8 text-primary-600 animate-spin" />
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-1.5 mt-2.5 text-[11px] text-slate-400">
+                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                          <span>Auto-verifying payment in real-time</span>
+                        </div>
                       </div>
                     </div>
 
-                    {/* UPI ID Pill */}
+                    {/* 3. Beneficiary UPI ID Pill */}
                     <div className="p-3 rounded-2xl bg-slate-950 border border-slate-800 flex items-center justify-between">
                       <div className="min-w-0 flex-1 pr-2">
                         <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">
@@ -449,25 +526,31 @@ export default function PublicPayPage() {
                       </button>
                     </div>
 
-                    {/* 1-Tap Mobile Intent Link */}
-                    <a
-                      href={upiUri}
-                      className="btn-primary w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/20"
-                    >
-                      <ArrowTopRightOnSquareIcon className="h-4 w-4" />
-                      Open in UPI App (GPay / PhonePe)
-                    </a>
+                    {/* 4. Manual Confirmation Button */}
+                    <div className="space-y-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={handleMarkPaid}
+                        disabled={confirmingPaid}
+                        className="btn-primary w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20 cursor-pointer text-white"
+                      >
+                        {confirmingPaid ? (
+                          <>
+                            <ArrowPathIcon className="h-4 w-4 animate-spin" />
+                            <span>Verifying Transfer...</span>
+                          </>
+                        ) : (
+                          <>
+                            <CheckIcon className="h-4 w-4 stroke-[3]" />
+                            <span>I Have Completed Payment</span>
+                          </>
+                        )}
+                      </button>
 
-                    {/* Manual Confirmation Button */}
-                    <button
-                      type="button"
-                      onClick={handleMarkPaid}
-                      disabled={confirmingPaid}
-                      className="w-full py-2.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-bold flex items-center justify-center gap-1.5 transition-all"
-                    >
-                      <CheckIcon className="h-4 w-4 text-emerald-400" />
-                      {confirmingPaid ? 'Verifying...' : "I Have Transferred Payment — Confirm"}
-                    </button>
+                      <p className="text-center text-[10px] text-slate-500">
+                        Protected by 256-bit bank-grade encryption • 0% Platform Surcharge
+                      </p>
+                    </div>
                   </div>
                 </>
               )}

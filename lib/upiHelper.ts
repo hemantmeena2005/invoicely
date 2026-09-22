@@ -21,6 +21,18 @@ export function buildUpiUri({ upiId, payeeName, amount, invoiceNumber, note }: U
   return `upi://pay?pa=${cleanUpi}&pn=${cleanName}&am=${cleanAmount}&cu=INR&tn=${transactionNote}`
 }
 
+export function buildGPayUri(params: UpiPaymentParams): string {
+  return buildUpiUri(params)
+}
+
+export function buildPhonePeUri(params: UpiPaymentParams): string {
+  return buildUpiUri(params)
+}
+
+export function buildPaytmUri(params: UpiPaymentParams): string {
+  return buildUpiUri(params)
+}
+
 /**
  * Generates Base64 Data URL for web and email image rendering
  */
