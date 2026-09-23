@@ -13,7 +13,7 @@ import {
 } from '@heroicons/react/24/outline'
 import Link from 'next/link'
 import { Skeleton } from '@/components/ui/Skeleton'
-import { REMINDER_OPTIONS, ReminderSchedule } from '@/lib/reminderHelper'
+import { REMINDER_OPTIONS, ReminderSchedule, cleanDisplayTerms } from '@/lib/reminderHelper'
 
 interface InvoiceItem {
   description: string
@@ -92,7 +92,7 @@ export default function EditInvoicePage({ params }: { params: { id: string } }) 
             : [{ description: 'Professional Services', quantity: 1, rate: 0, amount: 0 }],
           taxRate: invoiceData.taxRate || 0,
           notes: invoiceData.notes || '',
-          terms: invoiceData.terms || '',
+          terms: cleanDisplayTerms(invoiceData.terms) || '',
           reminderSchedule: (invoiceData.reminderSchedule || 'off') as ReminderSchedule
         })
       } catch (err) {

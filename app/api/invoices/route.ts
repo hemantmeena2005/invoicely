@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSessionUser } from '@/lib/authHelper'
 import { supabase } from '@/lib/supabase'
-import { computeNextReminderDate, ReminderSchedule } from '@/lib/reminderHelper'
+import { 
+  computeNextReminderDate, 
+  ReminderSchedule, 
+  extractReminderConfig, 
+  embedReminderToTerms,
+  cleanDisplayTerms 
+} from '@/lib/reminderHelper'
 
 export async function GET() {
   try {
@@ -21,33 +27,43 @@ export async function GET() {
       return NextResponse.json([], { status: 200 })
     }
 
-    const formatted = (invoices || []).map((inv: any) => ({
-      ...inv,
-      _id: inv.id,
-      invoiceNumber: inv.invoice_number,
-      taxRate: inv.tax_rate,
-      taxAmount: inv.tax_amount,
-      issueDate: inv.issue_date,
-      dueDate: inv.due_date,
-      paidAt: inv.paid_at,
-      emailStatus: inv.email_status,
-      lastEmailedAt: inv.last_emailed_at,
-      emailLogs: inv.email_logs,
-      reminderSchedule: inv.reminder_schedule || 'off',
-      nextReminderAt: inv.next_reminder_at,
-      reminderCount: inv.reminder_count || 0,
-      createdAt: inv.created_at,
-      updatedAt: inv.updated_at,
-      clientId: inv.client
-        ? {
-            ...inv.client,
-            _id: inv.client.id,
-          }
-        : {
-            name: 'Unknown Client',
-            email: '',
-          },
-    }))
+    const formatted = (invoices || []).map((inv: any) => {
+      const reminderConfig = extractReminderConfig(
+        inv.reminder_schedule,
+        inv.next_reminder_at,
+        inv.reminder_count,
+        inv.terms,
+        inv.email_logs
+      )
+
+      return {
+        ...inv,
+        _id: inv.id,
+        invoiceNumber: inv.invoice_number,
+        taxRate: inv.tax_rate,
+        taxAmount: inv.tax_amount,
+        issueDate: inv.issue_date,
+        dueDate: inv.due_date,
+        paidAt: inv.paid_at,
+        emailStatus: inv.email_status,
+        lastEmailedAt: inv.last_emailed_at,
+        emailLogs: inv.email_logs,
+        reminderSchedule: inv.status === 'paid' ? 'off' : reminderConfig.schedule,
+        nextReminderAt: inv.status === 'paid' ? null : reminderConfig.nextReminderAt,
+        reminderCount: reminderConfig.reminderCount,
+        createdAt: inv.created_at,
+        updatedAt: inv.updated_at,
+        clientId: inv.client
+          ? {
+              ...inv.client,
+              _id: inv.client.id,
+            }
+          : {
+              name: 'Unknown Client',
+              email: '',
+            },
+      }
+    })
 
     return NextResponse.json(formatted)
   } catch (error) {
@@ -102,6 +118,7 @@ export async function POST(request: NextRequest) {
     const total = subtotal + taxAmount
 
     const computedNextReminder = computeNextReminderDate(reminderSchedule as ReminderSchedule, dueDate)
+    const embeddedTerms = embedReminderToTerms(terms, reminderSchedule as ReminderSchedule, computedNextReminder, 0)
 
     const newInvoiceData = {
       user_id: user.id,
@@ -115,7 +132,7 @@ export async function POST(request: NextRequest) {
       due_date: new Date(dueDate).toISOString(),
       issue_date: new Date().toISOString(),
       notes,
-      terms,
+      terms: embeddedTerms,
       status: 'draft',
       email_status: 'not_sent',
       reminder_schedule: reminderSchedule,
@@ -143,10 +160,8 @@ export async function POST(request: NextRequest) {
         total,
         due_date: new Date(dueDate).toISOString(),
         issue_date: new Date().toISOString(),
-        notes: reminderSchedule !== 'off' 
-          ? `${notes}\n[ReminderSchedule: ${reminderSchedule}]`.trim() 
-          : notes,
-        terms,
+        notes,
+        terms: embeddedTerms,
         status: 'draft',
         email_status: 'not_sent',
       }

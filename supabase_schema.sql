@@ -66,6 +66,11 @@ CREATE TABLE IF NOT EXISTS public.invoices (
   updated_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 
+-- Migration for invoices reminder schedule:
+ALTER TABLE public.invoices ADD COLUMN IF NOT EXISTS reminder_schedule TEXT DEFAULT 'off';
+ALTER TABLE public.invoices ADD COLUMN IF NOT EXISTS next_reminder_at TIMESTAMPTZ;
+ALTER TABLE public.invoices ADD COLUMN IF NOT EXISTS reminder_count INT DEFAULT 0;
+
 -- 4. INDEXES FOR HIGH-SPEED QUERIES
 CREATE INDEX IF NOT EXISTS idx_clients_user_id ON public.clients(user_id);
 CREATE INDEX IF NOT EXISTS idx_invoices_user_id ON public.invoices(user_id);

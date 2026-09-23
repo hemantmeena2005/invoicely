@@ -26,7 +26,7 @@ import Link from 'next/link'
 import { StatusBadge } from '@/components/ui/Badge'
 import { Skeleton } from '@/components/ui/Skeleton'
 import UPIPaymentModal from '@/components/UPIPaymentModal'
-import { REMINDER_OPTIONS, ReminderSchedule, getScheduleBadge } from '@/lib/reminderHelper'
+import { REMINDER_OPTIONS, ReminderSchedule, getScheduleBadge, cleanDisplayTerms } from '@/lib/reminderHelper'
 
 interface Invoice {
   _id: string
@@ -562,10 +562,10 @@ export default function InvoiceViewPage() {
                     <p className="mt-0.5">{invoice.notes}</p>
                   </div>
                 )}
-                {invoice.terms && (
+                {cleanDisplayTerms(invoice.terms) && (
                   <div>
                     <span className="font-bold uppercase text-[10px] text-slate-400">Terms</span>
-                    <p className="mt-0.5">{invoice.terms}</p>
+                    <p className="mt-0.5">{cleanDisplayTerms(invoice.terms)}</p>
                   </div>
                 )}
               </div>

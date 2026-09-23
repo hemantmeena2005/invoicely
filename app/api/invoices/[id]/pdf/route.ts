@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import { format } from 'date-fns';
 import { generateUpiQrPngBuffer } from '@/lib/upiHelper';
+import { cleanDisplayTerms } from '@/lib/reminderHelper';
 
 export async function GET(
   request: NextRequest,
@@ -283,7 +284,8 @@ export async function GET(
     }
 
     // Terms
-    if (invoice.terms) {
+    const displayTerms = cleanDisplayTerms(invoice.terms);
+    if (displayTerms) {
       yPosition -= 40;
       page.drawText('Terms:', {
         x: 50,
@@ -294,7 +296,7 @@ export async function GET(
       });
 
       yPosition -= 20;
-      page.drawText(invoice.terms, {
+      page.drawText(displayTerms, {
         x: 50,
         y: yPosition,
         size: 10,

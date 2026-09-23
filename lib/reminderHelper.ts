@@ -101,3 +101,81 @@ export function getScheduleBadge(schedule?: string) {
   const opt = REMINDER_OPTIONS.find(o => o.value === schedule) || REMINDER_OPTIONS[0]
   return opt
 }
+
+/**
+ * Extracts reminder configuration from direct columns or fallback storage in terms/email_logs
+ */
+export function extractReminderConfig(
+  reminderScheduleCol?: string | null,
+  nextReminderAtCol?: string | null,
+  reminderCountCol?: number | null,
+  terms?: string | null,
+  emailLogs?: any
+): { schedule: ReminderSchedule; nextReminderAt: string | null; reminderCount: number } {
+  // 1. If column has an explicit value and is not 'off', use it
+  if (reminderScheduleCol && reminderScheduleCol !== 'off') {
+    return {
+      schedule: reminderScheduleCol as ReminderSchedule,
+      nextReminderAt: nextReminderAtCol || null,
+      reminderCount: Number(reminderCountCol || 0),
+    }
+  }
+
+  // 2. Check terms string for embedded tag: [REMINDER:schedule=daily|next=...|count=0]
+  if (terms && typeof terms === 'string') {
+    const match = terms.match(/\[REMINDER:schedule=([a-z_]+)(?:\|next=([^|\]]*))?(?:\|count=(\d+))?\]/i)
+    if (match) {
+      const schedule = match[1] as ReminderSchedule
+      const nextReminderAt = match[2] && match[2] !== 'null' ? match[2] : null
+      const reminderCount = match[3] ? parseInt(match[3], 10) : 0
+      return { schedule, nextReminderAt, reminderCount }
+    }
+  }
+
+  // 3. Check email_logs for config object
+  if (Array.isArray(emailLogs)) {
+    const configLog = emailLogs.find((l: any) => l && l._isReminderConfig)
+    if (configLog && configLog.schedule) {
+      return {
+        schedule: configLog.schedule as ReminderSchedule,
+        nextReminderAt: configLog.nextReminderAt || null,
+        reminderCount: Number(configLog.reminderCount || 0),
+      }
+    }
+  }
+
+  // 4. Fallback default
+  return {
+    schedule: (reminderScheduleCol as ReminderSchedule) || 'off',
+    nextReminderAt: nextReminderAtCol || null,
+    reminderCount: Number(reminderCountCol || 0),
+  }
+}
+
+/**
+ * Embeds reminder config into terms without destroying existing terms
+ */
+export function embedReminderToTerms(
+  terms: string | undefined | null,
+  schedule: ReminderSchedule,
+  nextReminderAt: string | null,
+  reminderCount: number = 0
+): string {
+  const baseTerms = (terms || '').replace(/\[REMINDER:[^\]]+\]/gi, '').trim()
+  if (schedule === 'off') {
+    return baseTerms
+  }
+  const tag = `[REMINDER:schedule=${schedule}|next=${nextReminderAt || 'null'}|count=${reminderCount}]`
+  return baseTerms ? `${baseTerms}\n${tag}` : tag
+}
+
+/**
+ * Strips internal metadata tags for clean user-facing display on PDF and UI
+ */
+export function cleanDisplayTerms(terms?: string | null): string {
+  if (!terms) return ''
+  return terms
+    .replace(/\[REMINDER:[^\]]+\]/gi, '')
+    .replace(/\[UPI Settlement UTR:[^\]]+\]/gi, '')
+    .trim()
+}

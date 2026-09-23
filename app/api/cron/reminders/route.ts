@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
 import { sendInvoiceReminder } from '@/lib/email'
-import { computeNextReminderDate, ReminderSchedule } from '@/lib/reminderHelper'
+import { 
+  computeNextReminderDate, 
+  ReminderSchedule, 
+  extractReminderConfig, 
+  embedReminderToTerms,
+  cleanDisplayTerms 
+} from '@/lib/reminderHelper'
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib'
 
 export async function GET(request: NextRequest) {
@@ -32,20 +38,31 @@ async function handleCronReminders(request: NextRequest) {
 
     console.log(`⏰ [CRON] Checking scheduled invoice reminders at ${nowIso}...`)
 
-    // Fetch unpaid invoices with active reminder schedules ready for execution
+    // Fetch unpaid invoices with safe query (resilient to missing columns)
     const { data: invoices, error: fetchError } = await supabaseAdmin
       .from('invoices')
       .select('*, client:clients(*), user:users(*)')
       .neq('status', 'paid')
-      .neq('reminder_schedule', 'off')
-      .lte('next_reminder_at', nowIso)
 
     if (fetchError) {
       console.error('❌ [CRON] Error querying scheduled invoices:', fetchError)
       return NextResponse.json({ error: 'Database query failed', details: fetchError.message }, { status: 500 })
     }
 
-    const eligibleInvoices = invoices || []
+    // Filter in-memory using extractReminderConfig (handles both direct columns & fallback terms)
+    const eligibleInvoices = (invoices || []).filter((inv: any) => {
+      const config = extractReminderConfig(
+        inv.reminder_schedule,
+        inv.next_reminder_at,
+        inv.reminder_count,
+        inv.terms,
+        inv.email_logs
+      )
+      if (config.schedule === 'off') return false
+      if (!config.nextReminderAt) return false
+      return new Date(config.nextReminderAt).getTime() <= now.getTime()
+    })
+
     console.log(`⏰ [CRON] Found ${eligibleInvoices.length} invoices scheduled for reminders`)
 
     const results = []
@@ -98,8 +115,15 @@ async function handleCronReminders(request: NextRequest) {
           continue
         }
 
-        // Calculate next reminder date
-        const schedule = (invoice.reminder_schedule || 'daily') as ReminderSchedule
+        // Extract config & calculate next reminder date
+        const config = extractReminderConfig(
+          invoice.reminder_schedule,
+          invoice.next_reminder_at,
+          invoice.reminder_count,
+          invoice.terms,
+          invoice.email_logs
+        )
+        const schedule = config.schedule
         const nextDate = computeNextReminderDate(schedule, invoice.due_date, now)
 
         // Log entry
@@ -115,18 +139,40 @@ async function handleCronReminders(request: NextRequest) {
 
         const currentLogs = Array.isArray(invoice.email_logs) ? invoice.email_logs : []
         const updatedLogs = [...currentLogs, newLog]
-        const reminderCount = (invoice.reminder_count || 0) + 1
+        const reminderCount = (config.reminderCount || 0) + 1
 
-        await supabaseAdmin
+        const updatedTerms = embedReminderToTerms(
+          invoice.terms,
+          schedule,
+          nextDate,
+          reminderCount
+        )
+
+        const updatePayload: Record<string, any> = {
+          email_logs: updatedLogs,
+          last_emailed_at: nowIso,
+          email_status: 'sent',
+          terms: updatedTerms,
+          reminder_count: reminderCount,
+          next_reminder_at: nextDate,
+          reminder_schedule: schedule,
+        }
+
+        let { error: updateErr } = await supabaseAdmin
           .from('invoices')
-          .update({
-            email_logs: updatedLogs,
-            last_emailed_at: nowIso,
-            email_status: 'sent',
-            reminder_count: reminderCount,
-            next_reminder_at: nextDate,
-          })
+          .update(updatePayload)
           .eq('id', invoice.id)
+
+        if (updateErr) {
+          // Retry without column extensions
+          delete updatePayload.reminder_count
+          delete updatePayload.next_reminder_at
+          delete updatePayload.reminder_schedule
+          await supabaseAdmin
+            .from('invoices')
+            .update(updatePayload)
+            .eq('id', invoice.id)
+        }
 
         console.log(`✅ [CRON] Reminder #${reminderCount} sent for ${invoice.invoice_number}. Next: ${nextDate}`)
 

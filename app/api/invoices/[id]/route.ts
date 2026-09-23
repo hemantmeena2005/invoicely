@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSessionUser } from '@/lib/authHelper'
 import { supabase } from '@/lib/supabase'
-import { computeNextReminderDate, ReminderSchedule } from '@/lib/reminderHelper'
+import { 
+  computeNextReminderDate, 
+  ReminderSchedule, 
+  extractReminderConfig, 
+  embedReminderToTerms,
+  cleanDisplayTerms 
+} from '@/lib/reminderHelper'
 
 export async function GET(
   request: NextRequest,
@@ -24,6 +30,14 @@ export async function GET(
       return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
     }
 
+    const reminderConfig = extractReminderConfig(
+      invoice.reminder_schedule,
+      invoice.next_reminder_at,
+      invoice.reminder_count,
+      invoice.terms,
+      invoice.email_logs
+    )
+
     return NextResponse.json({
       ...invoice,
       _id: invoice.id,
@@ -36,9 +50,9 @@ export async function GET(
       emailStatus: invoice.email_status,
       lastEmailedAt: invoice.last_emailed_at,
       emailLogs: invoice.email_logs,
-      reminderSchedule: invoice.reminder_schedule || 'off',
-      nextReminderAt: invoice.next_reminder_at,
-      reminderCount: invoice.reminder_count || 0,
+      reminderSchedule: invoice.status === 'paid' ? 'off' : reminderConfig.schedule,
+      nextReminderAt: invoice.status === 'paid' ? null : reminderConfig.nextReminderAt,
+      reminderCount: reminderConfig.reminderCount,
       createdAt: invoice.created_at,
       updatedAt: invoice.updated_at,
       clientId: invoice.client
@@ -110,12 +124,25 @@ export async function PUT(
     if (notes !== undefined) updatePayload.notes = notes
     if (terms !== undefined) updatePayload.terms = terms
     
+    // Fetch existing invoice to preserve terms and handle schema fallback
+    const { data: currentInvoice } = await supabase
+      .from('invoices')
+      .select('terms, email_logs, due_date, status, reminder_schedule, next_reminder_at, reminder_count')
+      .eq('id', params.id)
+      .eq('user_id', user.id)
+      .single()
+
+    const currentTerms = terms !== undefined ? terms : (currentInvoice?.terms || '')
+    const effectiveDueDate = dueDate || currentInvoice?.due_date || new Date().toISOString()
+    const effectiveStatus = status || currentInvoice?.status || 'draft'
+
     if (status) {
       updatePayload.status = status
       if (status === 'paid') {
         updatePayload.paid_at = new Date().toISOString()
         // Stop any automated reminders immediately upon payment!
         updatePayload.next_reminder_at = null
+        updatePayload.terms = embedReminderToTerms(currentTerms, 'off', null, 0)
       } else {
         updatePayload.paid_at = null
       }
@@ -123,17 +150,38 @@ export async function PUT(
 
     if (reminderSchedule !== undefined) {
       updatePayload.reminder_schedule = reminderSchedule
-      if (reminderSchedule === 'off' || status === 'paid') {
+      if (reminderSchedule === 'off' || effectiveStatus === 'paid') {
         updatePayload.next_reminder_at = null
+        updatePayload.terms = embedReminderToTerms(currentTerms, 'off', null, 0)
       } else {
-        const effectiveDueDate = dueDate || updatePayload.due_date
         updatePayload.next_reminder_at = computeNextReminderDate(
           reminderSchedule as ReminderSchedule, 
-          effectiveDueDate || new Date().toISOString()
+          effectiveDueDate
+        )
+        updatePayload.terms = embedReminderToTerms(
+          currentTerms,
+          reminderSchedule as ReminderSchedule,
+          updatePayload.next_reminder_at,
+          currentInvoice?.reminder_count || 0
         )
       }
     } else if (nextReminderAt !== undefined) {
       updatePayload.next_reminder_at = nextReminderAt
+      const existingConfig = extractReminderConfig(
+        currentInvoice?.reminder_schedule,
+        currentInvoice?.next_reminder_at,
+        currentInvoice?.reminder_count,
+        currentTerms,
+        currentInvoice?.email_logs
+      )
+      if (existingConfig.schedule !== 'off') {
+        updatePayload.terms = embedReminderToTerms(
+          currentTerms,
+          existingConfig.schedule,
+          nextReminderAt,
+          existingConfig.reminderCount
+        )
+      }
     }
 
     let { data: updated, error } = await supabase
@@ -169,6 +217,14 @@ export async function PUT(
       return NextResponse.json({ error: 'Failed to update invoice' }, { status: 404 })
     }
 
+    const reminderConfig = extractReminderConfig(
+      updated.reminder_schedule,
+      updated.next_reminder_at,
+      updated.reminder_count,
+      updated.terms,
+      updated.email_logs
+    )
+
     return NextResponse.json({
       ...updated,
       _id: updated.id,
@@ -177,9 +233,9 @@ export async function PUT(
       taxAmount: updated.tax_amount,
       issueDate: updated.issue_date,
       dueDate: updated.due_date,
-      reminderSchedule: updated.reminder_schedule || reminderSchedule || 'off',
-      nextReminderAt: status === 'paid' ? null : (updated.next_reminder_at ?? updatePayload.next_reminder_at),
-      reminderCount: updated.reminder_count || 0,
+      reminderSchedule: effectiveStatus === 'paid' ? 'off' : reminderConfig.schedule,
+      nextReminderAt: effectiveStatus === 'paid' ? null : reminderConfig.nextReminderAt,
+      reminderCount: reminderConfig.reminderCount,
       clientId: updated.client ? { ...updated.client, _id: updated.client.id } : { name: 'Unknown' },
     })
   } catch (error) {
