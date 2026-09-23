@@ -1,5 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
+import { parseBankSms } from '@/lib/bankSmsParser'
+import { embedReminderToTerms } from '@/lib/reminderHelper'
+
+export async function GET() {
+  return NextResponse.json({
+    status: 'active',
+    endpoint: 'Invoicely Automated Bank SMS & UPI Webhook',
+    version: '2.0',
+    documentation: 'Send POST with JSON { sms: "..." } or { content: "..." } to auto-verify bank UPI credits without fees.',
+  })
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -11,72 +22,213 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized webhook request' }, { status: 401 })
     }
 
-    const payload = await request.json()
-    const {
-      invoiceId,
-      invoiceNumber,
-      amount,
-      utr,
-      status = 'SUCCESS',
-      transactionId,
-    } = payload
+    const contentType = request.headers.get('content-type') || ''
+    let payload: any = {}
+    let rawText = ''
 
-    const refUtr = (utr || transactionId || '').toString().trim()
-
-    if (!invoiceId && !invoiceNumber) {
-      return NextResponse.json({ error: 'Missing invoiceId or invoiceNumber in webhook payload' }, { status: 400 })
+    if (contentType.includes('application/json')) {
+      payload = await request.json()
+      rawText = payload.sms || payload.content || payload.message || payload.text || payload.body || payload.msg || ''
+    } else if (contentType.includes('application/x-www-form-urlencoded')) {
+      const formData = await request.formData()
+      const entries: Record<string, any> = {}
+      formData.forEach((val, key) => { entries[key] = val })
+      payload = entries
+      rawText = payload.sms || payload.content || payload.message || payload.text || payload.body || ''
+    } else {
+      rawText = await request.text()
     }
 
-    if (status !== 'SUCCESS' && status !== 'paid') {
-      return NextResponse.json({ message: 'Webhook received for non-success status, skipped', status }, { status: 200 })
+    // 1. If an SMS text was forwarded, parse it with our Bank SMS parser
+    let parsedSms: any = null
+    let refUtr = (payload.utr || payload.transactionId || '').toString().trim()
+    let invoiceNumber = (payload.invoiceNumber || '').toString().trim()
+    let invoiceId = (payload.invoiceId || '').toString().trim()
+    let amount = payload.amount ? parseFloat(payload.amount) : null
+
+    if (rawText && typeof rawText === 'string') {
+      parsedSms = parseBankSms(rawText)
+      console.log('📱 [BANK SMS WEBHOOK] Parsed incoming SMS:', parsedSms)
+
+      // If it's explicitly a debit, skip processing
+      if (!parsedSms.isCredit) {
+        return NextResponse.json({
+          success: false,
+          ignored: true,
+          reason: 'Notification is not a credit or deposit transaction',
+          parsed: parsedSms,
+        }, { status: 200 })
+      }
+
+      if (!refUtr && parsedSms.utr) refUtr = parsedSms.utr
+      if (!amount && parsedSms.amount) amount = parsedSms.amount
+      if (!invoiceNumber && parsedSms.invoiceHint) invoiceNumber = parsedSms.invoiceHint
     }
 
-    // 1. Find invoice by ID or Invoice Number
-    let query = supabaseAdmin.from('invoices').select('*')
+    console.log(`🔎 [BANK SMS WEBHOOK] Searching invoice for UTR: "${refUtr}", Amount: ${amount}, Hint: "${invoiceNumber}"`)
+
+    // 2. Multi-tier Matching Engine
+    let matchedInvoice: any = null
+
+    // Match Tier 1: Search by Invoice ID if provided directly
     if (invoiceId) {
-      query = query.eq('id', invoiceId)
-    } else if (invoiceNumber) {
-      query = query.eq('invoice_number', invoiceNumber)
+      const { data } = await supabaseAdmin
+        .from('invoices')
+        .select('*, client:clients(*)')
+        .eq('id', invoiceId)
+        .single()
+      if (data) matchedInvoice = data
     }
 
-    const { data: invoice, error: findError } = await query.single()
+    // Match Tier 2: Search by UTR already submitted by client on /pay/[id]
+    if (!matchedInvoice && refUtr) {
+      const { data: utrMatches } = await supabaseAdmin
+        .from('invoices')
+        .select('*, client:clients(*)')
+        .ilike('terms', `%UTR:${refUtr}%`)
+        .limit(1)
 
-    if (findError || !invoice) {
-      return NextResponse.json({ error: 'Invoice matching webhook payload not found' }, { status: 404 })
+      if (utrMatches && utrMatches.length > 0) {
+        matchedInvoice = utrMatches[0]
+        console.log(`✅ [BANK SMS WEBHOOK] Matched invoice #${matchedInvoice.invoice_number} by client-submitted UTR ${refUtr}`)
+      }
     }
 
-    const nowIso = new Date().toISOString()
-    const existingTerms = invoice.terms || ''
-    const updatedTerms = refUtr ? (existingTerms ? `${existingTerms} | UTR:${refUtr}` : `UTR:${refUtr}`) : existingTerms
+    // Match Tier 3: Search by Invoice Number (e.g. from transaction note or hint)
+    if (!matchedInvoice && invoiceNumber) {
+      // Clean invoice number hint (remove hyphens to match format variants)
+      const cleanHint = invoiceNumber.replace(/[^a-zA-Z0-9]/g, '')
+      const { data: numMatches } = await supabaseAdmin
+        .from('invoices')
+        .select('*, client:clients(*)')
+        .neq('status', 'paid')
 
-    // 2. Mark invoice as paid
-    const { data: updatedInvoice, error: updateError } = await supabaseAdmin
-      .from('invoices')
-      .update({
-        status: 'paid',
-        paid_at: nowIso,
-        updated_at: nowIso,
-        terms: updatedTerms,
+      if (numMatches && numMatches.length > 0) {
+        const found = numMatches.find(inv => 
+          inv.invoice_number.replace(/[^a-zA-Z0-9]/g, '').toLowerCase() === cleanHint.toLowerCase()
+        )
+        if (found) {
+          matchedInvoice = found
+          console.log(`✅ [BANK SMS WEBHOOK] Matched invoice #${matchedInvoice.invoice_number} by note hint "${invoiceNumber}"`)
+        }
+      }
+    }
+
+    // Match Tier 4: Search by exact Amount among unpaid invoices
+    if (!matchedInvoice && amount && amount > 0) {
+      const { data: amountMatches } = await supabaseAdmin
+        .from('invoices')
+        .select('*, client:clients(*)')
+        .neq('status', 'paid')
+        .eq('total', amount)
+        .order('created_at', { ascending: false })
+
+      if (amountMatches && amountMatches.length > 0) {
+        // Pick the most recent unpaid invoice matching this exact amount
+        matchedInvoice = amountMatches[0]
+        console.log(`✅ [BANK SMS WEBHOOK] Matched invoice #${matchedInvoice.invoice_number} by exact amount ₹${amount}`)
+      }
+    }
+
+    // If no invoice could be matched, log the event and return details
+    if (!matchedInvoice) {
+      console.warn('⚠️ [BANK SMS WEBHOOK] Received credit SMS but no matching unpaid invoice found:', {
+        refUtr,
+        amount,
+        invoiceNumber,
+        parsedSms,
       })
-      .eq('id', invoice.id)
-      .select()
+      return NextResponse.json({
+        success: false,
+        matched: false,
+        message: 'Bank credit received and parsed, but no unpaid invoice matched the UTR or amount.',
+        parsed: {
+          isCredit: true,
+          amount,
+          utr: refUtr,
+          bank: parsedSms?.bank,
+          accountLast4: parsedSms?.accountLast4,
+        },
+      }, { status: 200 })
+    }
+
+    // 3. Mark Invoice as PAID and record audit trail
+    const nowIso = new Date().toISOString()
+    const cleanTermsBase = (matchedInvoice.terms || '').replace(/\[REMINDER:[^\]]+\]/gi, '').trim()
+    const finalUtr = refUtr || 'BANK-VERIFIED'
+    
+    // Add verified UTR tag to terms
+    let updatedTerms = cleanTermsBase
+    if (!updatedTerms.includes(`UTR:${finalUtr}`)) {
+      updatedTerms = updatedTerms ? `${updatedTerms} | UTR:${finalUtr}` : `UTR:${finalUtr}`
+    }
+    // Deactivate reminder schedule upon payment
+    updatedTerms = embedReminderToTerms(updatedTerms, 'off', null, 0)
+
+    // Audit log entry
+    const currentLogs = Array.isArray(matchedInvoice.email_logs) ? matchedInvoice.email_logs : []
+    const auditEntry = {
+      sentAt: nowIso,
+      emailType: 'bank_sms_auto_reconciliation',
+      status: 'paid_verified',
+      utr: finalUtr,
+      amount: amount || matchedInvoice.total,
+      bank: parsedSms?.bank || 'Bank Transfer',
+      accountLast4: parsedSms?.accountLast4 || null,
+      source: 'automated_bank_sms_webhook',
+      rawSms: rawText ? (rawText.length > 120 ? rawText.substring(0, 120) + '...' : rawText) : undefined,
+    }
+
+    const updatePayload: Record<string, any> = {
+      status: 'paid',
+      paid_at: nowIso,
+      updated_at: nowIso,
+      terms: updatedTerms,
+      next_reminder_at: null,
+      reminder_schedule: 'off',
+      email_logs: [...currentLogs, auditEntry],
+    }
+
+    let { data: updatedInvoice, error: updateError } = await supabaseAdmin
+      .from('invoices')
+      .update(updatePayload)
+      .eq('id', matchedInvoice.id)
+      .select('*, client:clients(*)')
       .single()
 
     if (updateError) {
-      console.error('UPI Webhook update error:', updateError)
-      return NextResponse.json({ error: 'Failed to update invoice status' }, { status: 500 })
+      // Fallback update without reminder column extensions if database lacks columns
+      delete updatePayload.next_reminder_at
+      delete updatePayload.reminder_schedule
+      const retry = await supabaseAdmin
+        .from('invoices')
+        .update(updatePayload)
+        .eq('id', matchedInvoice.id)
+        .select('*, client:clients(*)')
+        .single()
+
+      if (retry.error) {
+        console.error('❌ [BANK SMS WEBHOOK] Failed to update invoice:', retry.error)
+        return NextResponse.json({ error: 'Failed to update invoice status' }, { status: 500 })
+      }
+      updatedInvoice = retry.data
     }
+
+    console.log(`🎉 [BANK SMS WEBHOOK] Successfully verified and marked invoice #${matchedInvoice.invoice_number} as PAID!`)
 
     return NextResponse.json({
       success: true,
-      message: 'Invoice successfully marked as paid via UPI webhook',
-      invoiceId: invoice.id,
-      invoiceNumber: invoice.invoice_number,
-      utr: refUtr,
+      matched: true,
+      message: `Invoice #${matchedInvoice.invoice_number} successfully verified and marked as PAID via Bank SMS!`,
+      invoiceId: matchedInvoice.id,
+      invoiceNumber: matchedInvoice.invoice_number,
+      total: matchedInvoice.total,
       paidAt: nowIso,
+      utr: finalUtr,
+      bank: parsedSms?.bank || 'Bank Transfer',
     })
   } catch (error) {
-    console.error('UPI Webhook handler error:', error)
+    console.error('❌ [BANK SMS WEBHOOK] Internal error:', error)
     return NextResponse.json({ error: 'Internal server error in webhook handler' }, { status: 500 })
   }
 }

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
+import { embedReminderToTerms } from '@/lib/reminderHelper'
 
 export async function POST(
   request: NextRequest,
@@ -53,8 +54,23 @@ export async function POST(
     }
 
     const nowIso = new Date().toISOString()
-    const existingTerms = invoice.terms || ''
-    const updatedTerms = existingTerms ? `${existingTerms} | UTR:${cleanUtr}` : `UTR:${cleanUtr}`
+    const cleanTermsBase = (invoice.terms || '').replace(/\[REMINDER:[^\]]+\]/gi, '').trim()
+    let updatedTerms = cleanTermsBase
+    if (!updatedTerms.includes(`UTR:${cleanUtr}`)) {
+      updatedTerms = updatedTerms ? `${updatedTerms} | UTR:${cleanUtr}` : `UTR:${cleanUtr}`
+    }
+    // Deactivate reminder schedule upon client payment
+    updatedTerms = embedReminderToTerms(updatedTerms, 'off', null, 0)
+
+    const currentLogs = Array.isArray(invoice.email_logs) ? invoice.email_logs : []
+    const auditEntry = {
+      sentAt: nowIso,
+      emailType: 'client_submitted_utr',
+      status: 'paid_pending_bank_sync',
+      utr: cleanUtr,
+      amount: invoice.total,
+      source: 'hosted_checkout_portal',
+    }
 
     // 3. Update invoice as PAID with UTR recorded in terms & audit log
     const updatePayload: Record<string, any> = {
@@ -62,6 +78,9 @@ export async function POST(
       paid_at: nowIso,
       updated_at: nowIso,
       terms: updatedTerms,
+      next_reminder_at: null,
+      reminder_schedule: 'off',
+      email_logs: [...currentLogs, auditEntry],
     }
 
     let { data: updatedInvoice, error: updateError } = await supabaseAdmin
@@ -72,8 +91,20 @@ export async function POST(
       .single()
 
     if (updateError) {
-      console.error('Error updating invoice with UTR:', updateError)
-      return NextResponse.json({ error: 'Failed to record payment verification' }, { status: 500 })
+      delete updatePayload.next_reminder_at
+      delete updatePayload.reminder_schedule
+      const retry = await supabaseAdmin
+        .from('invoices')
+        .update(updatePayload)
+        .eq('id', invoiceId)
+        .select()
+        .single()
+
+      if (retry.error) {
+        console.error('Error updating invoice with UTR:', retry.error)
+        return NextResponse.json({ error: 'Failed to record payment verification' }, { status: 500 })
+      }
+      updatedInvoice = retry.data
     }
 
     return NextResponse.json({
