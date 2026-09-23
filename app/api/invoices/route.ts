@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSessionUser } from '@/lib/authHelper'
 import { supabase } from '@/lib/supabase'
+import { computeNextReminderDate, ReminderSchedule } from '@/lib/reminderHelper'
 
 export async function GET() {
   try {
@@ -32,6 +33,9 @@ export async function GET() {
       emailStatus: inv.email_status,
       lastEmailedAt: inv.last_emailed_at,
       emailLogs: inv.email_logs,
+      reminderSchedule: inv.reminder_schedule || 'off',
+      nextReminderAt: inv.next_reminder_at,
+      reminderCount: inv.reminder_count || 0,
       createdAt: inv.created_at,
       updatedAt: inv.updated_at,
       clientId: inv.client
@@ -60,7 +64,15 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { clientId, dueDate, items, taxRate = 0, notes = '', terms = '' } = body
+    const { 
+      clientId, 
+      dueDate, 
+      items, 
+      taxRate = 0, 
+      notes = '', 
+      terms = '',
+      reminderSchedule = 'off'
+    } = body
 
     if (!clientId || !dueDate || !items || items.length === 0) {
       return NextResponse.json(
@@ -89,6 +101,8 @@ export async function POST(request: NextRequest) {
     const taxAmount = (subtotal * Number(taxRate)) / 100
     const total = subtotal + taxAmount
 
+    const computedNextReminder = computeNextReminderDate(reminderSchedule as ReminderSchedule, dueDate)
+
     const newInvoiceData = {
       user_id: user.id,
       client_id: clientId,
@@ -104,6 +118,9 @@ export async function POST(request: NextRequest) {
       terms,
       status: 'draft',
       email_status: 'not_sent',
+      reminder_schedule: reminderSchedule,
+      next_reminder_at: computedNextReminder,
+      reminder_count: 0,
     }
 
     const { data: invoice, error } = await supabase
@@ -114,12 +131,59 @@ export async function POST(request: NextRequest) {
 
     if (error) {
       console.error('Supabase invoice create error:', error)
+      // Retry without reminder columns if table schema doesn't have them yet
+      const fallbackData = {
+        user_id: user.id,
+        client_id: clientId,
+        invoice_number: invoiceNumber,
+        items: calculatedItems,
+        subtotal,
+        tax_rate: Number(taxRate),
+        tax_amount: taxAmount,
+        total,
+        due_date: new Date(dueDate).toISOString(),
+        issue_date: new Date().toISOString(),
+        notes: reminderSchedule !== 'off' 
+          ? `${notes}\n[ReminderSchedule: ${reminderSchedule}]`.trim() 
+          : notes,
+        terms,
+        status: 'draft',
+        email_status: 'not_sent',
+      }
+      const retry = await supabase
+        .from('invoices')
+        .insert([fallbackData])
+        .select('*, client:clients(*)')
+        .single()
+
+      if (!retry.error && retry.data) {
+        return NextResponse.json(
+          {
+            ...retry.data,
+            _id: retry.data.id,
+            invoiceNumber: retry.data.invoice_number,
+            taxRate: retry.data.tax_rate,
+            taxAmount: retry.data.tax_amount,
+            issueDate: retry.data.issue_date,
+            dueDate: retry.data.due_date,
+            reminderSchedule,
+            nextReminderAt: computedNextReminder,
+            reminderCount: 0,
+            clientId: retry.data.client ? { ...retry.data.client, _id: retry.data.client.id } : { name: 'Unknown' },
+          },
+          { status: 201 }
+        )
+      }
+
       return NextResponse.json(
         {
           _id: `temp_${Date.now()}`,
           id: `temp_${Date.now()}`,
           invoiceNumber,
           ...newInvoiceData,
+          reminderSchedule,
+          nextReminderAt: computedNextReminder,
+          reminderCount: 0,
           createdAt: new Date().toISOString(),
         },
         { status: 201 }
@@ -135,6 +199,9 @@ export async function POST(request: NextRequest) {
         taxAmount: invoice.tax_amount,
         issueDate: invoice.issue_date,
         dueDate: invoice.due_date,
+        reminderSchedule: invoice.reminder_schedule || reminderSchedule,
+        nextReminderAt: invoice.next_reminder_at || computedNextReminder,
+        reminderCount: invoice.reminder_count || 0,
         clientId: invoice.client ? { ...invoice.client, _id: invoice.client.id } : { name: 'Unknown' },
       },
       { status: 201 }

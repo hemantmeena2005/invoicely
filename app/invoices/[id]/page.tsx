@@ -20,11 +20,13 @@ import {
   LinkIcon,
   DocumentDuplicateIcon,
   ShieldCheckIcon,
+  BellAlertIcon
 } from '@heroicons/react/24/outline'
 import Link from 'next/link'
 import { StatusBadge } from '@/components/ui/Badge'
 import { Skeleton } from '@/components/ui/Skeleton'
 import UPIPaymentModal from '@/components/UPIPaymentModal'
+import { REMINDER_OPTIONS, ReminderSchedule, getScheduleBadge } from '@/lib/reminderHelper'
 
 interface Invoice {
   _id: string
@@ -59,12 +61,17 @@ interface Invoice {
   paidAt?: string
   emailStatus?: string
   lastEmailedAt?: string
+  reminderSchedule?: ReminderSchedule
+  nextReminderAt?: string | null
+  reminderCount?: number
   emailLogs?: Array<{
     sentAt: string
     emailType: string
     recipient: string
     status: string
     messageId?: string
+    automatedCron?: boolean
+    schedule?: string
   }>
 }
 
@@ -270,6 +277,37 @@ export default function InvoiceViewPage() {
       setFeedbackMessage('An error occurred while sending email.')
     } finally {
       setEmailLoading(false)
+    }
+  }
+
+  const [scheduleUpdating, setScheduleUpdating] = useState(false)
+
+  const handleUpdateReminderSchedule = async (newSchedule: ReminderSchedule) => {
+    try {
+      setScheduleUpdating(true)
+      setFeedbackMessage(null)
+
+      const response = await fetch(`/api/invoices/${invoiceId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reminderSchedule: newSchedule }),
+      })
+
+      if (response.ok) {
+        const updated = await response.json()
+        setInvoice(prev => prev ? {
+          ...prev,
+          reminderSchedule: updated.reminderSchedule,
+          nextReminderAt: updated.nextReminderAt,
+        } : null)
+        setFeedbackMessage(`Reminder schedule updated to ${REMINDER_OPTIONS.find(o => o.value === newSchedule)?.label}`)
+      } else {
+        setFeedbackMessage('Failed to update reminder schedule')
+      }
+    } catch (error) {
+      setFeedbackMessage('Error updating reminder schedule')
+    } finally {
+      setScheduleUpdating(false)
     }
   }
 
@@ -559,6 +597,106 @@ export default function InvoiceViewPage() {
 
           {/* Email Activity & Status Sidebar (1 col) */}
           <div className="space-y-6">
+            {/* Automated Payment Reminders Card */}
+            <div className="card p-6 space-y-4 border border-indigo-100 bg-gradient-to-b from-indigo-50/30 to-white">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <div className="flex items-center gap-2">
+                  <BellAlertIcon className="h-5 w-5 text-indigo-600" />
+                  <h3 className="text-base font-bold text-slate-900">Scheduled Reminders</h3>
+                </div>
+                {invoice.status === 'paid' ? (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                    Auto-Stopped
+                  </span>
+                ) : (
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${getScheduleBadge(invoice.reminderSchedule).badgeColor}`}>
+                    {getScheduleBadge(invoice.reminderSchedule).label}
+                  </span>
+                )}
+              </div>
+
+              {invoice.status === 'paid' ? (
+                <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-100 text-xs text-emerald-800 space-y-1">
+                  <p className="font-bold flex items-center gap-1">
+                    <CheckCircleIcon className="h-4 w-4 text-emerald-600" />
+                    Invoice is Paid
+                  </p>
+                  <p className="text-[11px] text-emerald-700">
+                    All scheduled automated reminders have been automatically deactivated.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3 text-xs">
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                      Reminder Frequency
+                    </label>
+                    <div className="relative">
+                      <select
+                        value={invoice.reminderSchedule || 'off'}
+                        disabled={scheduleUpdating}
+                        onChange={(e) => handleUpdateReminderSchedule(e.target.value as ReminderSchedule)}
+                        className="input-field text-xs py-2 bg-white font-semibold text-slate-800 cursor-pointer disabled:opacity-50"
+                      >
+                        {REMINDER_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label} — {opt.description}
+                          </option>
+                        ))}
+                      </select>
+                      {scheduleUpdating && (
+                        <div className="absolute right-3 top-2.5">
+                          <ArrowPathIcon className="h-4 w-4 text-indigo-600 animate-spin" />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {invoice.reminderSchedule && invoice.reminderSchedule !== 'off' && (
+                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-1.5 text-xs text-slate-600">
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-500">Next Reminder:</span>
+                        <span className="font-bold text-slate-900">
+                          {invoice.nextReminderAt 
+                            ? new Date(invoice.nextReminderAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                            : 'Pending calculation'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-500">Total Sent So Far:</span>
+                        <span className="font-bold text-indigo-600">
+                          {invoice.reminderCount || 0} reminder{(invoice.reminderCount || 0) === 1 ? '' : 's'}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="pt-1">
+                    <button
+                      onClick={() => handleSendEmail('reminder')}
+                      disabled={emailLoading}
+                      className="btn-primary w-full text-xs py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold flex items-center justify-center gap-1.5 shadow-md shadow-indigo-600/20 cursor-pointer"
+                    >
+                      {emailLoading ? (
+                        <>
+                          <ArrowPathIcon className="h-3.5 w-3.5 animate-spin" />
+                          <span>Dispatching Email...</span>
+                        </>
+                      ) : (
+                        <>
+                          <PaperAirplaneIcon className="h-3.5 w-3.5" />
+                          <span>⚡ Send Instant Reminder Now</span>
+                        </>
+                      )}
+                    </button>
+                    <p className="text-[10px] text-center text-slate-400 mt-1">
+                      Emails client with invoice PDF &amp; direct UPI pay link
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
             {/* Email Tracking Card */}
             <div className="card p-6 space-y-4">
               <div className="flex items-center justify-between pb-3 border-b border-slate-100">

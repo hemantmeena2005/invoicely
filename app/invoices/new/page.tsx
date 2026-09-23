@@ -10,9 +10,12 @@ import {
   SparklesIcon, 
   CalculatorIcon, 
   DocumentTextIcon,
-  UserPlusIcon 
+  UserPlusIcon,
+  ClockIcon,
+  BellAlertIcon
 } from '@heroicons/react/24/outline'
 import Link from 'next/link'
+import { REMINDER_OPTIONS, ReminderSchedule } from '@/lib/reminderHelper'
 
 interface Client {
   _id: string
@@ -36,6 +39,7 @@ export default function NewInvoicePage() {
     taxRate: 0,
     notes: 'Thank you for your business! Please remit payment within the specified due date.',
     terms: 'Payment is due within 14 days of invoice date. Late payments are subject to a 1.5% monthly fee.',
+    reminderSchedule: 'weekly' as ReminderSchedule,
     items: [
       { description: 'Design & Development Services', quantity: 1, rate: 1500, amount: 1500 }
     ] as InvoiceItem[]
@@ -329,10 +333,52 @@ export default function NewInvoicePage() {
               </div>
             </div>
 
+            {/* Automated Reminder Schedule Card */}
+            <div className="card p-6 space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <BellAlertIcon className="h-5 w-5 text-indigo-600" />
+                  <h2 className="text-base font-bold text-slate-900">3. Automated Payment Reminders</h2>
+                </div>
+                <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  Auto-Stops on Payment
+                </span>
+              </div>
+
+              <div className="space-y-3">
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  Choose how often Invoicely should automatically email friendly payment reminders with UPI payment links & invoice PDFs to your client until paid.
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-1">
+                  {REMINDER_OPTIONS.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => setFormData(prev => ({ ...prev, reminderSchedule: option.value }))}
+                      className={`p-3.5 rounded-2xl text-left border transition-all cursor-pointer ${
+                        formData.reminderSchedule === option.value
+                          ? 'border-indigo-600 bg-indigo-50/50 ring-2 ring-indigo-600/20 shadow-sm'
+                          : 'border-slate-200 hover:border-slate-300 bg-white'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-slate-900">{option.label}</span>
+                        {formData.reminderSchedule === option.value && (
+                          <span className="h-2 w-2 rounded-full bg-indigo-600" />
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-1 leading-snug">{option.description}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
             {/* Notes & Terms Card */}
             <div className="card p-6 space-y-4">
               <h2 className="text-base font-bold text-slate-900 border-b border-slate-100 pb-3">
-                3. Additional Notes & Terms
+                4. Additional Notes & Terms
               </h2>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

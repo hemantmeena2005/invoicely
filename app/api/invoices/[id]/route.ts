@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSessionUser } from '@/lib/authHelper'
 import { supabase } from '@/lib/supabase'
+import { computeNextReminderDate, ReminderSchedule } from '@/lib/reminderHelper'
 
 export async function GET(
   request: NextRequest,
@@ -35,6 +36,9 @@ export async function GET(
       emailStatus: invoice.email_status,
       lastEmailedAt: invoice.last_emailed_at,
       emailLogs: invoice.email_logs,
+      reminderSchedule: invoice.reminder_schedule || 'off',
+      nextReminderAt: invoice.next_reminder_at,
+      reminderCount: invoice.reminder_count || 0,
       createdAt: invoice.created_at,
       updatedAt: invoice.updated_at,
       clientId: invoice.client
@@ -64,7 +68,17 @@ export async function PUT(
     }
 
     const body = await request.json()
-    const { clientId, dueDate, items, taxRate, notes, terms, status } = body
+    const { 
+      clientId, 
+      dueDate, 
+      items, 
+      taxRate, 
+      notes, 
+      terms, 
+      status,
+      reminderSchedule,
+      nextReminderAt
+    } = body
 
     const updatePayload: Record<string, any> = {
       updated_at: new Date().toISOString(),
@@ -95,16 +109,34 @@ export async function PUT(
     if (dueDate) updatePayload.due_date = new Date(dueDate).toISOString()
     if (notes !== undefined) updatePayload.notes = notes
     if (terms !== undefined) updatePayload.terms = terms
+    
     if (status) {
       updatePayload.status = status
       if (status === 'paid') {
         updatePayload.paid_at = new Date().toISOString()
+        // Stop any automated reminders immediately upon payment!
+        updatePayload.next_reminder_at = null
       } else {
         updatePayload.paid_at = null
       }
     }
 
-    const { data: updated, error } = await supabase
+    if (reminderSchedule !== undefined) {
+      updatePayload.reminder_schedule = reminderSchedule
+      if (reminderSchedule === 'off' || status === 'paid') {
+        updatePayload.next_reminder_at = null
+      } else {
+        const effectiveDueDate = dueDate || updatePayload.due_date
+        updatePayload.next_reminder_at = computeNextReminderDate(
+          reminderSchedule as ReminderSchedule, 
+          effectiveDueDate || new Date().toISOString()
+        )
+      }
+    } else if (nextReminderAt !== undefined) {
+      updatePayload.next_reminder_at = nextReminderAt
+    }
+
+    let { data: updated, error } = await supabase
       .from('invoices')
       .update(updatePayload)
       .eq('id', params.id)
@@ -112,7 +144,28 @@ export async function PUT(
       .select('*, client:clients(*)')
       .single()
 
-    if (error || !updated) {
+    if (error) {
+      console.warn('Supabase update error (retrying with safe columns):', error)
+      // Retry without reminder columns if Supabase doesn't have them
+      const safePayload = { ...updatePayload }
+      delete safePayload.reminder_schedule
+      delete safePayload.next_reminder_at
+      delete safePayload.reminder_count
+
+      const retry = await supabase
+        .from('invoices')
+        .update(safePayload)
+        .eq('id', params.id)
+        .eq('user_id', user.id)
+        .select('*, client:clients(*)')
+        .single()
+
+      if (!retry.error && retry.data) {
+        updated = retry.data
+      }
+    }
+
+    if (!updated) {
       return NextResponse.json({ error: 'Failed to update invoice' }, { status: 404 })
     }
 
@@ -124,6 +177,9 @@ export async function PUT(
       taxAmount: updated.tax_amount,
       issueDate: updated.issue_date,
       dueDate: updated.due_date,
+      reminderSchedule: updated.reminder_schedule || reminderSchedule || 'off',
+      nextReminderAt: status === 'paid' ? null : (updated.next_reminder_at ?? updatePayload.next_reminder_at),
+      reminderCount: updated.reminder_count || 0,
       clientId: updated.client ? { ...updated.client, _id: updated.client.id } : { name: 'Unknown' },
     })
   } catch (error) {

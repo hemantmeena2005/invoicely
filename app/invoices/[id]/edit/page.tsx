@@ -8,10 +8,12 @@ import {
   PlusIcon, 
   TrashIcon, 
   CalculatorIcon, 
-  CheckIcon 
+  CheckIcon,
+  BellAlertIcon
 } from '@heroicons/react/24/outline'
 import Link from 'next/link'
 import { Skeleton } from '@/components/ui/Skeleton'
+import { REMINDER_OPTIONS, ReminderSchedule } from '@/lib/reminderHelper'
 
 interface InvoiceItem {
   description: string
@@ -41,6 +43,9 @@ interface Invoice {
   total: number
   notes: string
   terms: string
+  reminderSchedule?: ReminderSchedule
+  nextReminderAt?: string | null
+  reminderCount?: number
 }
 
 export default function EditInvoicePage({ params }: { params: { id: string } }) {
@@ -58,7 +63,8 @@ export default function EditInvoicePage({ params }: { params: { id: string } }) 
     items: [] as InvoiceItem[],
     taxRate: 0,
     notes: '',
-    terms: ''
+    terms: '',
+    reminderSchedule: 'off' as ReminderSchedule
   })
 
   useEffect(() => {
@@ -86,7 +92,8 @@ export default function EditInvoicePage({ params }: { params: { id: string } }) 
             : [{ description: 'Professional Services', quantity: 1, rate: 0, amount: 0 }],
           taxRate: invoiceData.taxRate || 0,
           notes: invoiceData.notes || '',
-          terms: invoiceData.terms || ''
+          terms: invoiceData.terms || '',
+          reminderSchedule: (invoiceData.reminderSchedule || 'off') as ReminderSchedule
         })
       } catch (err) {
         setError('Failed to load invoice')
@@ -343,10 +350,52 @@ export default function EditInvoicePage({ params }: { params: { id: string } }) 
               </div>
             </div>
 
+            {/* Automated Reminder Schedule Card */}
+            <div className="card p-6 space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <BellAlertIcon className="h-5 w-5 text-indigo-600" />
+                  <h2 className="text-base font-bold text-slate-900">3. Automated Payment Reminders</h2>
+                </div>
+                <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  Auto-Stops on Payment
+                </span>
+              </div>
+
+              <div className="space-y-3">
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  Choose how often Invoicely should automatically email friendly payment reminders with UPI payment links & invoice PDFs to your client until paid.
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-1">
+                  {REMINDER_OPTIONS.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => setFormData(prev => ({ ...prev, reminderSchedule: option.value }))}
+                      className={`p-3.5 rounded-2xl text-left border transition-all cursor-pointer ${
+                        formData.reminderSchedule === option.value
+                          ? 'border-indigo-600 bg-indigo-50/50 ring-2 ring-indigo-600/20 shadow-sm'
+                          : 'border-slate-200 hover:border-slate-300 bg-white'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-slate-900">{option.label}</span>
+                        {formData.reminderSchedule === option.value && (
+                          <span className="h-2 w-2 rounded-full bg-indigo-600" />
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-1 leading-snug">{option.description}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
             {/* Notes & Terms */}
             <div className="card p-6 space-y-4">
               <h2 className="text-base font-bold text-slate-900 border-b border-slate-100 pb-3">
-                3. Additional Notes & Terms
+                4. Additional Notes & Terms
               </h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>

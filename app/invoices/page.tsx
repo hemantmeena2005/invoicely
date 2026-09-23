@@ -33,6 +33,8 @@ interface Invoice {
   dueDate: string
   emailStatus?: string
   lastEmailedAt?: string
+  reminderSchedule?: string
+  nextReminderAt?: string | null
   createdAt: string
 }
 
@@ -274,7 +276,15 @@ export default function InvoicesPage() {
                           <StatusBadge status={invoice.status} pulse={invoice.status === 'sent'} />
                         </td>
                         <td className="table-td">
-                          <StatusBadge status={invoice.emailStatus || 'not_sent'} />
+                          <div className="space-y-1">
+                            <StatusBadge status={invoice.emailStatus || 'not_sent'} />
+                            {invoice.reminderSchedule && invoice.reminderSchedule !== 'off' && invoice.status !== 'paid' && (
+                              <div className="flex items-center gap-1 text-[10px] font-bold text-indigo-700 bg-indigo-50/80 px-2 py-0.5 rounded-full border border-indigo-200/60 w-max">
+                                <span className="h-1.5 w-1.5 rounded-full bg-indigo-600 animate-pulse" />
+                                <span className="capitalize">{invoice.reminderSchedule.replace('_', ' ')}</span>
+                              </div>
+                            )}
+                          </div>
                         </td>
                         <td className="table-td text-right">
                           <div className="flex items-center justify-end gap-1.5">
