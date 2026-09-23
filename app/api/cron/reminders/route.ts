@@ -51,6 +51,9 @@ async function handleCronReminders(request: NextRequest) {
 
     // Filter in-memory using extractReminderConfig (handles both direct columns & fallback terms)
     const eligibleInvoices = (invoices || []).filter((inv: any) => {
+      // Don't nag clients if payment is currently under review
+      if (inv.status === 'under_review') return false
+
       const config = extractReminderConfig(
         inv.reminder_schedule,
         inv.next_reminder_at,

@@ -150,7 +150,7 @@ export async function PUT(
 
     if (reminderSchedule !== undefined) {
       updatePayload.reminder_schedule = reminderSchedule
-      if (reminderSchedule === 'off' || effectiveStatus === 'paid') {
+      if (reminderSchedule === 'off' || effectiveStatus === 'paid' || effectiveStatus === 'under_review') {
         updatePayload.next_reminder_at = null
         updatePayload.terms = embedReminderToTerms(currentTerms, 'off', null, 0)
       } else {

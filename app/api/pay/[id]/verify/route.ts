@@ -66,19 +66,18 @@ export async function POST(
     const auditEntry = {
       sentAt: nowIso,
       emailType: 'client_submitted_utr',
-      status: 'paid_pending_bank_sync',
+      status: 'under_review',
       utr: cleanUtr,
       amount: invoice.total,
       source: 'hosted_checkout_portal',
     }
 
-    // 3. Update invoice as PAID with UTR recorded in terms & audit log
+    // 3. Update invoice as UNDER_REVIEW with UTR recorded in terms & audit log
     const updatePayload: Record<string, any> = {
-      status: 'paid',
-      paid_at: nowIso,
+      status: 'under_review',
       updated_at: nowIso,
       terms: updatedTerms,
-      next_reminder_at: null,
+      next_reminder_at: null, // Pause reminders while under review
       reminder_schedule: 'off',
       email_logs: [...currentLogs, auditEntry],
     }
@@ -109,9 +108,9 @@ export async function POST(
 
     return NextResponse.json({
       success: true,
-      message: `Payment successfully verified with Bank UTR: ${cleanUtr}`,
+      status: 'under_review',
+      message: `Payment submitted for verification with Bank UTR: ${cleanUtr}`,
       utr: cleanUtr,
-      paidAt: nowIso,
       invoice: updatedInvoice,
     })
   } catch (error) {

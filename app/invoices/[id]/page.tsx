@@ -211,7 +211,7 @@ export default function InvoiceViewPage() {
     }
   }
 
-  const handleToggleStatus = async (newStatus: 'paid' | 'draft' | 'sent', utr?: string) => {
+  const handleToggleStatus = async (newStatus: 'paid' | 'draft' | 'sent' | 'under_review', utr?: string) => {
     setFeedbackMessage(null)
     const updatedNotes = utr 
       ? `${invoice?.notes || ''}\n[UPI Settlement UTR: ${utr}]`.trim() 
@@ -249,6 +249,33 @@ export default function InvoiceViewPage() {
     } catch (error) {
       setFeedbackMessage('An error occurred updating status')
       fetchInvoice()
+    }
+  }
+
+  const handleRejectReview = async () => {
+    setFeedbackMessage(null)
+    setPaymentLoading(true)
+    try {
+      const cleanTerms = cleanDisplayTerms(invoice?.terms)
+      const response = await fetch(`/api/invoices/${invoiceId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          status: 'sent',
+          terms: cleanTerms,
+        }),
+      })
+      if (response.ok) {
+        const updated = await response.json()
+        setInvoice(updated)
+        setFeedbackMessage('Payment rejected. Invoice status returned to Sent.')
+      } else {
+        setFeedbackMessage('Failed to reject payment')
+      }
+    } catch (e) {
+      setFeedbackMessage('Error rejecting payment')
+    } finally {
+      setPaymentLoading(false)
     }
   }
 
@@ -399,7 +426,23 @@ export default function InvoiceViewPage() {
                 {copiedLink ? 'Link Copied!' : 'Copy Payment Link'}
               </button>
 
-              {invoice.status !== 'paid' ? (
+              {invoice.status === 'under_review' ? (
+                <>
+                  <button
+                    onClick={() => handleToggleStatus('paid')}
+                    className="btn-primary text-xs py-2 px-3.5 whitespace-nowrap shrink-0 inline-flex items-center bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold shadow-sm"
+                  >
+                    <CheckCircleIcon className="h-3.5 w-3.5 mr-1.5" />
+                    Confirm Paid
+                  </button>
+                  <button
+                    onClick={handleRejectReview}
+                    className="btn-secondary text-xs py-2 px-3 whitespace-nowrap shrink-0 inline-flex items-center text-rose-700 border-rose-200 hover:bg-rose-50 font-bold"
+                  >
+                    Reject UTR
+                  </button>
+                </>
+              ) : invoice.status !== 'paid' ? (
                 <>
                   <button
                     onClick={() => setIsUpiModalOpen(true)}
@@ -453,6 +496,53 @@ export default function InvoiceViewPage() {
             >
               Done
             </button>
+          </div>
+        )}
+
+        {/* Payment Under Review Action Banner */}
+        {invoice.status === 'under_review' && (
+          <div className="p-5 rounded-2xl bg-amber-50 border-2 border-amber-300 shadow-md flex flex-col md:flex-row items-start md:items-center justify-between gap-4 animate-fade-in">
+            <div className="flex items-start sm:items-center gap-3.5">
+              <div className="h-12 w-12 rounded-2xl bg-amber-100 border border-amber-300 flex items-center justify-center font-bold text-xl flex-shrink-0 text-amber-700 shadow-inner">
+                ⏳
+              </div>
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="font-black text-base text-amber-950">Payment Submitted for Review</h3>
+                  {invoice.terms && invoice.terms.includes('UTR:') && (
+                    <span className="font-mono text-xs px-2.5 py-0.5 bg-white rounded-lg border border-amber-400 font-extrabold text-slate-900 shadow-sm">
+                      UTR: {invoice.terms.split('UTR:')[1]?.split('|')[0]?.trim()}
+                    </span>
+                  )}
+                  <span className="px-2 py-0.5 rounded-full bg-amber-200/80 text-amber-900 text-[10px] font-extrabold uppercase">
+                    Action Required
+                  </span>
+                </div>
+                <p className="text-xs text-amber-800/90 mt-1 max-w-2xl leading-relaxed">
+                  The client submitted this UPI UTR reference on the payment portal. Please check your bank account or UPI app to verify that <strong className="text-amber-950 font-bold">₹{invoice.total.toFixed(2)}</strong> was credited before confirming.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2.5 w-full md:w-auto shrink-0 justify-end pt-2 md:pt-0">
+              <button
+                type="button"
+                disabled={paymentLoading}
+                onClick={() => handleToggleStatus('paid')}
+                className="btn-primary bg-emerald-600 hover:bg-emerald-500 text-white text-xs py-2.5 px-4 flex items-center gap-1.5 shadow-md font-extrabold cursor-pointer"
+              >
+                <CheckCircleIcon className="h-4 w-4" />
+                Confirm & Mark Paid
+              </button>
+              <button
+                type="button"
+                disabled={paymentLoading}
+                onClick={handleRejectReview}
+                className="py-2.5 px-3.5 rounded-xl border border-rose-300 text-rose-700 bg-white hover:bg-rose-50 text-xs font-bold transition-all shadow-sm flex items-center gap-1 cursor-pointer"
+              >
+                Reject Invalid UTR
+              </button>
+            </div>
           </div>
         )}
 
@@ -516,9 +606,16 @@ export default function InvoiceViewPage() {
                 )}
                 {invoice.terms && invoice.terms.includes('UTR:') && (
                   <div className="mt-1">
-                    <span className="text-[11px] font-mono font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 inline-flex items-center gap-1 shadow-sm">
-                      <ShieldCheckIcon className="h-3.5 w-3.5 text-emerald-600" />
+                    <span className={`text-[11px] font-mono font-bold px-2.5 py-1 rounded-lg border inline-flex items-center gap-1 shadow-sm ${
+                      invoice.status === 'under_review'
+                        ? 'text-amber-800 bg-amber-50 border-amber-300'
+                        : 'text-emerald-700 bg-emerald-50 border-emerald-200'
+                    }`}>
+                      <ShieldCheckIcon className={`h-3.5 w-3.5 ${invoice.status === 'under_review' ? 'text-amber-600' : 'text-emerald-600'}`} />
                       UTR: {invoice.terms.split('UTR:')[1]?.split('|')[0]?.trim()}
+                      {invoice.status === 'under_review' && (
+                        <span className="font-sans text-[10px] text-amber-700 font-extrabold ml-1">(In Review)</span>
+                      )}
                     </span>
                   </div>
                 )}

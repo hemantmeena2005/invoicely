@@ -46,6 +46,14 @@ export function StatusBadge({ status, className = '', pulse = false }: BadgeProp
         label: 'Draft'
       }
       break
+    case 'under_review':
+    case 'in_review':
+      styles = {
+        bg: 'bg-amber-50 text-amber-800 border-amber-300 font-bold',
+        dot: 'bg-amber-500',
+        label: 'In Review'
+      }
+      break
     case 'delivered':
       styles = {
         bg: 'bg-teal-50 text-teal-700 border-teal-200/80',

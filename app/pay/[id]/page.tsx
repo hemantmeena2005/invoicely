@@ -173,9 +173,15 @@ export default function PublicInvoicePayPage() {
       }
 
       setVerifiedUtr(data.utr)
-      setCelebrateSuccess(true)
-      if (invoice) {
-        setInvoice({ ...invoice, status: 'paid', paidAt: data.paidAt || new Date().toISOString() })
+      if (data.status === 'under_review') {
+        if (invoice) {
+          setInvoice({ ...invoice, status: 'under_review' })
+        }
+      } else {
+        setCelebrateSuccess(true)
+        if (invoice) {
+          setInvoice({ ...invoice, status: 'paid', paidAt: data.paidAt || new Date().toISOString() })
+        }
       }
     } catch (e: any) {
       setUtrError(e.message || 'Verification failed. Please check the UTR number.')
@@ -387,7 +393,42 @@ export default function PublicInvoicePayPage() {
           {/* Right Column: Interactive Payment Portal Card (5 Cols) */}
           <div className="lg:col-span-5 space-y-6">
             <div className="bg-slate-900/90 backdrop-blur-md rounded-3xl border border-slate-800/90 shadow-2xl p-6 sm:p-7 sticky top-6 space-y-6">
-              {isPaid ? (
+              {invoice.status === 'under_review' ? (
+                <div className="text-center py-6 space-y-4">
+                  <div className="h-16 w-16 rounded-full bg-amber-500/20 text-amber-400 border border-amber-400/30 flex items-center justify-center mx-auto shadow-lg shadow-amber-500/20 animate-pulse">
+                    <ClockIcon className="h-9 w-9 stroke-[2.5]" />
+                  </div>
+                  <div>
+                    <span className="px-3 py-1 rounded-full bg-amber-500/20 text-amber-300 font-bold text-xs border border-amber-500/40 uppercase tracking-wider">
+                      Payment Under Review
+                    </span>
+                    <h3 className="text-xl font-black text-white mt-2">Verification in Progress</h3>
+                    <p className="text-xs text-slate-400 max-w-xs mx-auto mt-1">
+                      Your payment reference has been submitted. The payee is verifying credit in their bank account.
+                    </p>
+                  </div>
+
+                  <div className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800 text-left space-y-2 font-mono text-xs">
+                    <div className="flex justify-between items-center text-slate-400">
+                      <span>Submitted UTR:</span>
+                      <span className="text-white font-bold">{verifiedUtr || (invoice.terms?.includes('UTR:') ? invoice.terms.split('UTR:')[1]?.split('|')[0]?.trim() : 'Processing')}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-slate-400">
+                      <span>Amount:</span>
+                      <span className="text-emerald-400 font-bold">₹{invoice.total.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-slate-400">
+                      <span>Status:</span>
+                      <span className="text-amber-400 font-bold">Awaiting Payee Confirmation</span>
+                    </div>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-slate-950/50 border border-slate-800 text-[11px] text-slate-400 flex items-center justify-center gap-2">
+                    <ArrowPathIcon className="h-4 w-4 text-indigo-400 animate-spin" />
+                    <span>Auto-refreshing status in real time...</span>
+                  </div>
+                </div>
+              ) : isPaid ? (
                 <div className="text-center py-8 space-y-4">
                   <div className="h-16 w-16 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-400/30 flex items-center justify-center mx-auto shadow-lg shadow-emerald-500/20">
                     <CheckCircleIcon className="h-10 w-10 stroke-[2.5]" />

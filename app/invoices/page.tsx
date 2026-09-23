@@ -115,7 +115,12 @@ export default function InvoicesPage() {
       clientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       clientEmail.toLowerCase().includes(searchTerm.toLowerCase())
     
-    const matchesStatus = statusFilter === 'all' || invoice.status === statusFilter
+    const matchesStatus =
+      statusFilter === 'all'
+        ? true
+        : statusFilter === 'under_review'
+        ? invoice.status === 'under_review' || invoice.status === 'in_review'
+        : invoice.status === statusFilter
     
     return matchesSearch && matchesStatus
   })
@@ -123,6 +128,7 @@ export default function InvoicesPage() {
   // Quick counts
   const counts = {
     all: invoices.length,
+    under_review: invoices.filter(i => i.status === 'under_review' || i.status === 'in_review').length,
     paid: invoices.filter(i => i.status === 'paid').length,
     sent: invoices.filter(i => i.status === 'sent').length,
     overdue: invoices.filter(i => i.status === 'overdue' || (i.status === 'sent' && new Date(i.dueDate) < new Date())).length,
@@ -173,6 +179,7 @@ export default function InvoicesPage() {
         <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
           {[
             { id: 'all', label: 'All Invoices', count: counts.all },
+            { id: 'under_review', label: 'In Review ⏳', count: counts.under_review },
             { id: 'paid', label: 'Paid', count: counts.paid },
             { id: 'sent', label: 'Sent / Pending', count: counts.sent },
             { id: 'overdue', label: 'Overdue', count: counts.overdue },
