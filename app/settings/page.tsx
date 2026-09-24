@@ -675,9 +675,9 @@ export default function SettingsPage() {
                   className="w-full p-2.5 bg-white rounded-xl border border-indigo-200 text-xs text-slate-800 font-mono shadow-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                 />
 
-                <div className="flex items-center justify-between pt-1">
-                  <span className="text-[10px] text-slate-500">
-                    Tests automatic UTR, amount extraction & invoice matching
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pt-1">
+                  <span className="text-[11px] text-slate-500">
+                    💡 Edit the amount above (e.g. <strong className="text-slate-800">Rs 1.00</strong>) to match any unpaid invoice for 1-click matching
                   </span>
                   <button
                     type="button"
