@@ -14,7 +14,8 @@ import {
   DocumentDuplicateIcon,
   CheckIcon,
   ArrowPathIcon,
-  InformationCircleIcon
+  InformationCircleIcon,
+  ExclamationCircleIcon
 } from '@heroicons/react/24/outline'
 import { buildUpiUri, generateUpiQrDataUrl } from '@/lib/upiHelper'
 
@@ -468,6 +469,19 @@ export default function PublicInvoicePayPage() {
                   </div>
 
                   <div className="space-y-4 pt-1">
+                    {/* Rejection Notice if Merchant Rejected Previous UTR */}
+                    {invoice.terms?.includes('[REJECTED:') && (
+                      <div className="p-3.5 rounded-2xl bg-rose-950/50 border border-rose-500/40 text-rose-200 text-xs space-y-1 animate-fade-in shadow-lg shadow-rose-950/30">
+                        <div className="flex items-center gap-2 font-bold text-rose-300">
+                          <ExclamationCircleIcon className="h-4 w-4 text-rose-400 shrink-0" />
+                          <span>Previous Reference Could Not Be Verified</span>
+                        </div>
+                        <p className="text-[11px] text-rose-300/80 leading-relaxed pl-6">
+                          The payee could not locate bank credit for UTR <span className="font-mono font-bold text-white">{invoice.terms.split('[REJECTED:')[1]?.split(']')[0]}</span>. Please scan the QR code to pay or re-enter the genuine 12-digit UTR from your bank app.
+                        </p>
+                      </div>
+                    )}
+
                     {/* 1. QR Code Display */}
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">

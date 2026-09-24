@@ -124,9 +124,22 @@ export async function POST(request: NextRequest) {
         .order('created_at', { ascending: false })
 
       if (amountMatches && amountMatches.length > 0) {
-        // Pick the most recent unpaid invoice matching this exact amount
-        matchedInvoice = amountMatches[0]
-        console.log(`✅ [BANK SMS WEBHOOK] Matched invoice #${matchedInvoice.invoice_number} by exact amount ₹${amount}`)
+        // If an invoice is under_review with a specific client-submitted UTR,
+        // do NOT match it by amount if the SMS contains a different conflicting UTR.
+        const validMatch = amountMatches.find(inv => {
+          if (inv.status === 'under_review' && inv.terms?.includes('UTR:') && refUtr) {
+            const existingUtr = inv.terms.split('UTR:')[1]?.split('|')[0]?.trim()
+            if (existingUtr && existingUtr !== refUtr) {
+              return false // Conflicting UTR! Skip this invoice
+            }
+          }
+          return true
+        })
+
+        if (validMatch) {
+          matchedInvoice = validMatch
+          console.log(`✅ [BANK SMS WEBHOOK] Matched invoice #${matchedInvoice.invoice_number} by exact amount ₹${amount}`)
+        }
       }
     }
 

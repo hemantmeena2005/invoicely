@@ -54,7 +54,10 @@ export async function POST(
     }
 
     const nowIso = new Date().toISOString()
-    const cleanTermsBase = (invoice.terms || '').replace(/\[REMINDER:[^\]]+\]/gi, '').trim()
+    const cleanTermsBase = (invoice.terms || '')
+      .replace(/\[REMINDER:[^\]]+\]/gi, '')
+      .replace(/\[REJECTED:[^\]]+\]/gi, '')
+      .trim()
     let updatedTerms = cleanTermsBase
     if (!updatedTerms.includes(`UTR:${cleanUtr}`)) {
       updatedTerms = updatedTerms ? `${updatedTerms} | UTR:${cleanUtr}` : `UTR:${cleanUtr}`

@@ -177,5 +177,6 @@ export function cleanDisplayTerms(terms?: string | null): string {
   return terms
     .replace(/\[REMINDER:[^\]]+\]/gi, '')
     .replace(/\[UPI Settlement UTR:[^\]]+\]/gi, '')
+    .replace(/\[REJECTED:[^\]]+\]/gi, '')
     .trim()
 }

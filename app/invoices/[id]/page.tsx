@@ -257,12 +257,19 @@ export default function InvoiceViewPage() {
     setPaymentLoading(true)
     try {
       const cleanTerms = cleanDisplayTerms(invoice?.terms)
+      const rejectedUtr = invoice?.terms?.includes('UTR:')
+        ? invoice.terms.split('UTR:')[1]?.split('|')[0]?.trim()
+        : ''
+      const updatedTermsWithReject = rejectedUtr
+        ? (cleanTerms ? `${cleanTerms} | [REJECTED:${rejectedUtr}]` : `[REJECTED:${rejectedUtr}]`)
+        : cleanTerms
+
       const response = await fetch(`/api/invoices/${invoiceId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           status: 'sent',
-          terms: cleanTerms,
+          terms: updatedTermsWithReject,
         }),
       })
       if (response.ok) {
