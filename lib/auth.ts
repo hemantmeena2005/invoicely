@@ -99,12 +99,19 @@ export const authOptions: NextAuthOptions = {
     jwt: async ({ token, user }) => {
       if (user) {
         token.id = user.id
+        if (user.name) token.name = user.name
+      }
+      if (token.name === 'Hemant Meena') {
+        token.name = 'John Doe'
       }
       return token
     },
     session: async ({ session, token }: any) => {
       if (session?.user && token) {
         session.user.id = token.id || token.sub
+        if (session.user.name === 'Hemant Meena') {
+          session.user.name = 'John Doe'
+        }
       }
       return session
     },

@@ -48,8 +48,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     )
   }
 
-  const userInitials = session?.user?.name
-    ? session.user.name
+  const rawUserName = session?.user?.name === 'Hemant Meena' ? 'John Doe' : (session?.user?.name || 'User')
+  const userInitials = rawUserName
+    ? rawUserName
         .split(' ')
         .map((n) => n[0])
         .join('')
@@ -160,7 +161,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 )}
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold text-slate-800 group-hover:text-primary-700 truncate transition-colors">
-                    {session?.user?.name || 'User'}
+                    {rawUserName}
                   </p>
                   <p className="text-xs text-slate-500 truncate">{session?.user?.email}</p>
                 </div>
@@ -177,7 +178,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   Settings
                 </Link>
                 <button
-                  onClick={() => signOut()}
+                  onClick={() => signOut({ callbackUrl: '/' })}
                   className="flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 rounded-xl transition-colors border border-rose-100"
                 >
                   <ArrowRightOnRectangleIcon className="h-3.5 w-3.5" />
@@ -284,7 +285,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               )}
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold text-slate-800 group-hover:text-primary-700 truncate transition-colors">
-                  {session?.user?.name || 'User'}
+                  {rawUserName}
                 </p>
                 <p className="text-xs text-slate-500 truncate">{session?.user?.email}</p>
               </div>
@@ -300,7 +301,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 Settings
               </Link>
               <button
-                onClick={() => signOut()}
+                onClick={() => signOut({ callbackUrl: '/' })}
                 className="flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 rounded-xl transition-colors border border-rose-100"
               >
                 <ArrowRightOnRectangleIcon className="h-3.5 w-3.5" />
