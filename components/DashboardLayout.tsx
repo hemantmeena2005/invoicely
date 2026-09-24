@@ -17,6 +17,7 @@ import {
   Cog6ToothIcon,
   ClockIcon,
 } from '@heroicons/react/24/outline'
+import ProductTourModal from '@/components/ProductTourModal'
 
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: HomeIcon },
@@ -31,6 +32,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const { data: session, status } = useSession()
   const pathname = usePathname()
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [tourOpen, setTourOpen] = useState(false)
 
   // Loading state placeholder if session is still pending
   if (status === 'loading') {
@@ -117,6 +119,26 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 )
               })}
             </nav>
+
+            {/* Quick Tour Button Mobile */}
+            <div className="px-4 py-2 border-t border-slate-100 bg-slate-50/30">
+              <button
+                type="button"
+                onClick={() => {
+                  setSidebarOpen(false)
+                  setTourOpen(true)
+                }}
+                className="w-full flex items-center justify-between p-2 rounded-xl bg-indigo-50/80 hover:bg-indigo-100 border border-indigo-200 text-indigo-800 text-xs font-bold transition-all shadow-sm cursor-pointer"
+              >
+                <div className="flex items-center gap-2">
+                  <span>🧭</span>
+                  <span>Where to create what?</span>
+                </div>
+                <span className="text-[10px] uppercase font-extrabold bg-indigo-200/80 text-indigo-900 px-2 py-0.5 rounded-full">
+                  Tour
+                </span>
+              </button>
+            </div>
 
             <div className="p-4 border-t border-slate-100 bg-slate-50/50">
               <Link
@@ -225,6 +247,23 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             })}
           </nav>
 
+          {/* Quick Tour Button Desktop */}
+          <div className="px-4 py-2 border-t border-slate-100 bg-slate-50/30">
+            <button
+              type="button"
+              onClick={() => setTourOpen(true)}
+              className="w-full flex items-center justify-between p-2 rounded-xl bg-indigo-50/80 hover:bg-indigo-100 border border-indigo-200 text-indigo-800 text-xs font-bold transition-all shadow-sm cursor-pointer"
+            >
+              <div className="flex items-center gap-2">
+                <span>🧭</span>
+                <span>Where to create what?</span>
+              </div>
+              <span className="text-[10px] uppercase font-extrabold bg-indigo-200/80 text-indigo-900 px-2 py-0.5 rounded-full">
+                Tour
+              </span>
+            </button>
+          </div>
+
           {/* User Account Footer */}
           <div className="p-4 border-t border-slate-100 bg-slate-50/40">
             <Link
@@ -293,6 +332,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
 
           <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setTourOpen(true)}
+              className="px-2.5 py-1.5 rounded-xl border border-indigo-200 bg-indigo-50/70 hover:bg-indigo-100 text-indigo-700 text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
+              title="Where to create what? Start product tour"
+            >
+              <span>🧭</span>
+              <span className="hidden sm:inline">Product Tour</span>
+            </button>
+
             <Link
               href="/invoices/new"
               className="btn-primary py-2 px-3 text-xs sm:text-sm flex items-center gap-1.5"
@@ -323,6 +372,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           {children}
         </main>
       </div>
+
+      {/* Product Tour Modal */}
+      <ProductTourModal isOpen={tourOpen} onClose={() => setTourOpen(false)} />
     </div>
   )
 }
