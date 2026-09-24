@@ -861,8 +861,8 @@ export default function InvoiceViewPage() {
           invoiceId={invoiceId}
           invoiceNumber={invoice.invoiceNumber}
           amount={invoice.total}
-          payeeName={userProfile?.upi_name || userProfile?.name || 'Hemant Meena'}
-          initialUpiId={userProfile?.upi_id || process.env.NEXT_PUBLIC_DEFAULT_UPI_ID || 'hemantmeena2005@oksbi'}
+          payeeName={userProfile?.upi_name || userProfile?.name || 'John Doe'}
+          initialUpiId={userProfile?.upi_id || process.env.NEXT_PUBLIC_DEFAULT_UPI_ID || 'demo@upi'}
           customQrUrl={userProfile?.upi_qr_code || undefined}
         />
       </div>

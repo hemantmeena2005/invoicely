@@ -10,14 +10,14 @@ export const authOptions: NextAuthOptions = {
       name: 'Demo Account',
       credentials: {
         email: { label: 'Email', type: 'email', placeholder: 'demo@invoicely.app' },
-        name: { label: 'Name', type: 'text', placeholder: 'Hemant Meena' },
-        upiId: { label: 'UPI ID', type: 'text', placeholder: 'hemantmeena2005@oksbi' },
-        upiName: { label: 'Payee Name', type: 'text', placeholder: 'Hemant Meena' },
+        name: { label: 'Name', type: 'text', placeholder: 'John Doe' },
+        upiId: { label: 'UPI ID', type: 'text', placeholder: 'demo@upi' },
+        upiName: { label: 'Payee Name', type: 'text', placeholder: 'John Doe' },
       },
       async authorize(credentials) {
         const email = credentials?.email?.trim().toLowerCase() || 'demo@invoicely.app'
-        const name = credentials?.name?.trim() || 'Hemant Meena'
-        const upiId = credentials?.upiId?.trim() || process.env.NEXT_PUBLIC_DEFAULT_UPI_ID || 'hemantmeena2005@oksbi'
+        const name = credentials?.name?.trim() || 'John Doe'
+        const upiId = credentials?.upiId?.trim() || process.env.NEXT_PUBLIC_DEFAULT_UPI_ID || 'demo@upi'
         const upiName = credentials?.upiName?.trim() || name
         const userId = `demo_${email.replace(/[^a-zA-Z0-9]/g, '_')}`
 

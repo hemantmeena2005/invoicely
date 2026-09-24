@@ -33,8 +33,8 @@ export default function UPIPaymentModal({
   invoiceId,
   invoiceNumber,
   amount,
-  payeeName = 'Hemant Meena',
-  initialUpiId = 'hemantmeena2005@oksbi',
+  payeeName = 'John Doe',
+  initialUpiId = 'demo@upi',
   customQrUrl,
 }: UPIPaymentModalProps) {
   const [upiId, setUpiId] = useState(initialUpiId)
@@ -81,7 +81,7 @@ export default function UPIPaymentModal({
   }, [isOpen])
 
   const paymentParams = {
-    upiId: upiId || 'hemantmeena2005@oksbi',
+    upiId: upiId || 'demo@upi',
     payeeName,
     amount,
     invoiceNumber,

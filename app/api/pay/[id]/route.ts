@@ -55,7 +55,7 @@ export async function GET(
         businessName: userProfile?.business_name || '',
         businessPhone: userProfile?.business_phone || '',
         businessAddress: userProfile?.business_address || '',
-        upiId: userProfile?.upi_id || process.env.NEXT_PUBLIC_DEFAULT_UPI_ID || 'hemantmeena2005@oksbi',
+        upiId: userProfile?.upi_id || process.env.NEXT_PUBLIC_DEFAULT_UPI_ID || 'demo@upi',
         upiName: userProfile?.upi_name || userProfile?.name || 'Invoicely Merchant',
         upiQrCode: userProfile?.upi_qr_code || '',
       },

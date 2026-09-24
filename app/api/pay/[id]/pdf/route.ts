@@ -206,7 +206,7 @@ export async function GET(
 
     // UPI Payment QR Code Section at the bottom
     try {
-      const upiId = userProfile?.upi_id || process.env.NEXT_PUBLIC_DEFAULT_UPI_ID || 'hemantmeena2005@oksbi'
+      const upiId = userProfile?.upi_id || process.env.NEXT_PUBLIC_DEFAULT_UPI_ID || 'demo@upi'
       const payeeName = userProfile?.upi_name || userProfile?.name || 'Invoicely Merchant'
       let upiImage: any = null
 

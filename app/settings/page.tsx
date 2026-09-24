@@ -34,7 +34,7 @@ export default function SettingsPage() {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [image, setImage] = useState('')
-  const [upiId, setUpiId] = useState('hemantmeena2005@oksbi')
+  const [upiId, setUpiId] = useState('')
   const [upiName, setUpiName] = useState('')
   const [upiQrCode, setUpiQrCode] = useState<string>('')
   const [businessName, setBusinessName] = useState('')
@@ -87,7 +87,7 @@ export default function SettingsPage() {
   useEffect(() => {
     if (upiId) {
       generateUpiQrDataUrl({
-        upiId: upiId || 'hemantmeena2005@oksbi',
+        upiId: upiId || 'demo@upi',
         payeeName: upiName || name || 'Business Payee',
         amount: 500,
         invoiceNumber: 'INV-DEMO-01',
@@ -105,7 +105,7 @@ export default function SettingsPage() {
         setName(u.name || session?.user?.name || '')
         setEmail(u.email || session?.user?.email || '')
         setImage(u.image || session?.user?.image || '')
-        setUpiId(u.upi_id || 'hemantmeena2005@oksbi')
+        setUpiId(u.upi_id || '')
         setUpiName(u.upi_name || u.name || session?.user?.name || '')
         setUpiQrCode(u.upi_qr_code || '')
         setBusinessName(u.business_name || '')
@@ -340,7 +340,7 @@ export default function SettingsPage() {
                     type="text"
                     value={upiName}
                     onChange={(e) => setUpiName(e.target.value)}
-                    placeholder="e.g. Hemant Meena or Acme Corp"
+                    placeholder="e.g. John Doe or Acme Corp"
                     className="input-field text-sm"
                   />
                   <p className="text-[11px] text-slate-400">
@@ -505,7 +505,7 @@ export default function SettingsPage() {
                     type="text"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    placeholder="Hemant Meena"
+                    placeholder="John Doe"
                     className="input-field text-sm"
                     required
                   />
@@ -789,7 +789,7 @@ export default function SettingsPage() {
                   {/* UPI VPA Pill */}
                   <div className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-between">
                     <span className="font-mono text-xs font-bold text-slate-800 truncate pr-2">
-                      {upiId || 'hemantmeena2005@oksbi'}
+                      {upiId || 'demo@upi'}
                     </span>
                     <button
                       type="button"

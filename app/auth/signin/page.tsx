@@ -21,10 +21,10 @@ import {
 export default function SignIn() {
   const router = useRouter()
   const [signingIn, setSigningIn] = useState(false)
-  const [name, setName] = useState('Hemant Meena')
+  const [name, setName] = useState('John Doe')
   const [email, setEmail] = useState('demo@invoicely.app')
-  const [upiId, setUpiId] = useState('hemantmeena2005@oksbi')
-  const [upiName, setUpiName] = useState('Hemant Meena')
+  const [upiId, setUpiId] = useState('demo@upi')
+  const [upiName, setUpiName] = useState('John Doe')
   const [showOptionalUpi, setShowOptionalUpi] = useState(true)
 
   useEffect(() => {
@@ -96,7 +96,7 @@ export default function SignIn() {
                       setName(e.target.value)
                       if (!upiName || upiName === name) setUpiName(e.target.value)
                     }}
-                    placeholder="e.g. Hemant Meena"
+                    placeholder="e.g. John Doe"
                     className="w-full bg-slate-950/80 border border-slate-700/80 rounded-xl px-3.5 py-2.5 pl-10 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500 transition-all"
                     required
                   />
@@ -150,7 +150,7 @@ export default function SignIn() {
                       type="text"
                       value={upiId}
                       onChange={(e) => setUpiId(e.target.value)}
-                      placeholder="hemantmeena2005@oksbi"
+                      placeholder="demo@upi"
                       className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white font-mono placeholder:text-slate-500 focus:outline-none focus:border-primary-500"
                     />
                   </div>
@@ -181,7 +181,7 @@ export default function SignIn() {
                       type="text"
                       value={upiName}
                       onChange={(e) => setUpiName(e.target.value)}
-                      placeholder="e.g. Hemant Meena"
+                      placeholder="e.g. John Doe"
                       className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-primary-500"
                     />
                   </div>

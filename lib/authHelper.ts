@@ -48,7 +48,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
         email: existingUser.email,
         name: existingUser.name,
         image: existingUser.image,
-        upi_id: existingUser.upi_id || meta.upi_id || process.env.NEXT_PUBLIC_DEFAULT_UPI_ID || 'hemantmeena2005@oksbi',
+        upi_id: existingUser.upi_id || meta.upi_id || process.env.NEXT_PUBLIC_DEFAULT_UPI_ID || 'demo@upi',
         upi_name: existingUser.upi_name || meta.upi_name || existingUser.name,
         upi_qr_code: existingUser.upi_qr_code || meta.upi_qr_code || '',
         business_name: existingUser.business_name || meta.business_name || '',

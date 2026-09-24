@@ -220,7 +220,7 @@ export default async function Dashboard() {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-              Welcome back, {session?.user?.name?.split(' ')[0] || 'Hemant'} 👋
+              Welcome back, {session?.user?.name?.split(' ')[0] || 'there'} 👋
             </h1>
             <p className="text-slate-500 text-sm mt-1">
               Here is what is happening with your invoices, clients, and payments today.

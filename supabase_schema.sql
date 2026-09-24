@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS public.users (
   email TEXT UNIQUE NOT NULL,
   name TEXT NOT NULL,
   image TEXT,
-  upi_id TEXT DEFAULT 'hemantmeena2005@oksbi',
+  upi_id TEXT DEFAULT 'demo@upi',
   upi_name TEXT,
   upi_qr_code TEXT,
   business_name TEXT,
@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS public.users (
 );
 
 -- Migration for existing installations:
-ALTER TABLE public.users ADD COLUMN IF NOT EXISTS upi_id TEXT DEFAULT 'hemantmeena2005@oksbi';
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS upi_id TEXT DEFAULT 'demo@upi';
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS upi_name TEXT;
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS upi_qr_code TEXT;
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS business_name TEXT;

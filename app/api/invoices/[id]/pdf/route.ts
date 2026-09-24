@@ -307,8 +307,8 @@ export async function GET(
 
     // UPI Payment QR Code Section at the bottom
     try {
-      const upiId = user.upi_id || process.env.NEXT_PUBLIC_DEFAULT_UPI_ID || 'hemantmeena2005@oksbi';
-      const payeeName = user.upi_name || user.name || 'Hemant Meena';
+      const upiId = user.upi_id || process.env.NEXT_PUBLIC_DEFAULT_UPI_ID || 'demo@upi';
+      const payeeName = user.upi_name || user.name || 'John Doe';
       let upiImage: any = null;
 
       // If user uploaded a custom QR code, embed it

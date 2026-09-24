@@ -129,7 +129,7 @@ export default function PublicInvoicePayPage() {
       // Generate dynamic UPI QR
       if (!silent || !qrDataUrl) {
         generateUpiQrDataUrl({
-          upiId: data.invoice.merchant.upiId || 'hemantmeena2005@oksbi',
+          upiId: data.invoice.merchant.upiId || 'demo@upi',
           payeeName: data.invoice.merchant.upiName || data.invoice.merchant.name,
           amount: data.invoice.total,
           invoiceNumber: data.invoice.invoiceNumber,
