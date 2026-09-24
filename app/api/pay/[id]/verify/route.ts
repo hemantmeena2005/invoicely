@@ -57,11 +57,13 @@ export async function POST(
     const cleanTermsBase = (invoice.terms || '')
       .replace(/\[REMINDER:[^\]]+\]/gi, '')
       .replace(/\[REJECTED:[^\]]+\]/gi, '')
+      .replace(/\[REVIEW_AT:[^\]]+\]/gi, '')
+      .replace(/\|?\s*UTR:[^\s|]+/gi, '')
       .trim()
     let updatedTerms = cleanTermsBase
-    if (!updatedTerms.includes(`UTR:${cleanUtr}`)) {
-      updatedTerms = updatedTerms ? `${updatedTerms} | UTR:${cleanUtr}` : `UTR:${cleanUtr}`
-    }
+    updatedTerms = updatedTerms
+      ? `${updatedTerms} | UTR:${cleanUtr} | [REVIEW_AT:${nowIso}]`
+      : `UTR:${cleanUtr} | [REVIEW_AT:${nowIso}]`
     // Deactivate reminder schedule upon client payment
     updatedTerms = embedReminderToTerms(updatedTerms, 'off', null, 0)
 

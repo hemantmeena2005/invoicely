@@ -67,94 +67,109 @@ export async function POST(request: NextRequest) {
 
     console.log(`🔎 [BANK SMS WEBHOOK] Searching invoice for UTR: "${refUtr}", Amount: ${amount}, Hint: "${invoiceNumber}"`)
 
-    // 2. Multi-tier Matching Engine
+    // 2. Matching Engine (Strict Under-Review UTR Verification)
     let matchedInvoice: any = null
 
-    // Match Tier 1: Search by Invoice ID if provided directly
-    if (invoiceId) {
-      const { data } = await supabaseAdmin
-        .from('invoices')
-        .select('*, client:clients(*)')
-        .eq('id', invoiceId)
-        .single()
-      if (data) matchedInvoice = data
-    }
-
-    // Match Tier 2: Search by UTR already submitted by client on /pay/[id]
-    if (!matchedInvoice && refUtr) {
+    // Search exclusively for invoices that are currently UNDER_REVIEW with this client-submitted UTR
+    if (refUtr) {
       const { data: utrMatches } = await supabaseAdmin
         .from('invoices')
         .select('*, client:clients(*)')
+        .eq('status', 'under_review')
         .ilike('terms', `%UTR:${refUtr}%`)
         .limit(1)
 
       if (utrMatches && utrMatches.length > 0) {
-        matchedInvoice = utrMatches[0]
-        console.log(`✅ [BANK SMS WEBHOOK] Matched invoice #${matchedInvoice.invoice_number} by client-submitted UTR ${refUtr}`)
-      }
-    }
+        const candidate = utrMatches[0]
 
-    // Match Tier 3: Search by Invoice Number (e.g. from transaction note or hint)
-    if (!matchedInvoice && invoiceNumber) {
-      // Clean invoice number hint (remove hyphens to match format variants)
-      const cleanHint = invoiceNumber.replace(/[^a-zA-Z0-9]/g, '')
-      const { data: numMatches } = await supabaseAdmin
-        .from('invoices')
-        .select('*, client:clients(*)')
-        .neq('status', 'paid')
-
-      if (numMatches && numMatches.length > 0) {
-        const found = numMatches.find(inv => 
-          inv.invoice_number.replace(/[^a-zA-Z0-9]/g, '').toLowerCase() === cleanHint.toLowerCase()
-        )
-        if (found) {
-          matchedInvoice = found
-          console.log(`✅ [BANK SMS WEBHOOK] Matched invoice #${matchedInvoice.invoice_number} by note hint "${invoiceNumber}"`)
-        }
-      }
-    }
-
-    // Match Tier 4: Search by exact Amount among unpaid invoices
-    if (!matchedInvoice && amount && amount > 0) {
-      const { data: amountMatches } = await supabaseAdmin
-        .from('invoices')
-        .select('*, client:clients(*)')
-        .neq('status', 'paid')
-        .eq('total', amount)
-        .order('created_at', { ascending: false })
-
-      if (amountMatches && amountMatches.length > 0) {
-        // If an invoice is under_review with a specific client-submitted UTR,
-        // do NOT match it by amount if the SMS contains a different conflicting UTR.
-        const validMatch = amountMatches.find(inv => {
-          if (inv.status === 'under_review' && inv.terms?.includes('UTR:') && refUtr) {
-            const existingUtr = inv.terms.split('UTR:')[1]?.split('|')[0]?.trim()
-            if (existingUtr && existingUtr !== refUtr) {
-              return false // Conflicting UTR! Skip this invoice
-            }
+        // Check 5-minute review timeout
+        let reviewStartTime: number | null = null
+        if (candidate.terms && candidate.terms.includes('[REVIEW_AT:')) {
+          const match = candidate.terms.match(/\[REVIEW_AT:([^\]]+)\]/)
+          if (match && match[1]) {
+            const parsed = new Date(match[1]).getTime()
+            if (!isNaN(parsed)) reviewStartTime = parsed
           }
-          return true
-        })
-
-        if (validMatch) {
-          matchedInvoice = validMatch
-          console.log(`✅ [BANK SMS WEBHOOK] Matched invoice #${matchedInvoice.invoice_number} by exact amount ₹${amount}`)
         }
+        if (!reviewStartTime && candidate.updated_at) {
+          const parsed = new Date(candidate.updated_at).getTime()
+          if (!isNaN(parsed)) reviewStartTime = parsed
+        }
+
+        const isExpired = reviewStartTime ? (Date.now() - reviewStartTime > 5 * 60 * 1000) : false
+
+        if (isExpired) {
+          console.warn(`⏳ [BANK SMS WEBHOOK] UTR ${refUtr} for #${candidate.invoice_number} arrived after 5-min timeout! Rejecting...`)
+          // Automatically reject expired invoice
+          const cleanTerms = (candidate.terms || '')
+            .replace(/\[REVIEW_AT:[^\]]+\]/gi, '')
+            .replace(/\[REJECTED:[^\]]+\]/gi, '')
+            .replace(/\|?\s*UTR:[^\s|]+/gi, '')
+            .trim()
+          const updatedTermsWithReject = cleanTerms 
+            ? `${cleanTerms} | [REJECTED:${refUtr}]`
+            : `[REJECTED:${refUtr}]`
+
+          const currentLogs = Array.isArray(candidate.email_logs) ? candidate.email_logs : []
+          await supabaseAdmin
+            .from('invoices')
+            .update({
+              status: 'sent',
+              terms: updatedTermsWithReject,
+              updated_at: new Date().toISOString(),
+              email_logs: [...currentLogs, {
+                sentAt: new Date().toISOString(),
+                emailType: 'timeout_rejected_at_webhook',
+                status: 'rejected',
+                utr: refUtr,
+                reason: 'Bank SMS arrived after 5-minute review window expired',
+              }],
+            })
+            .eq('id', candidate.id)
+
+          return NextResponse.json({
+            success: false,
+            matched: false,
+            expired: true,
+            message: `Bank credit UTR ${refUtr} arrived after the 5-minute review window expired. Invoice #${candidate.invoice_number} was rejected and marked unpaid.`,
+            parsed: {
+              isCredit: true,
+              amount,
+              utr: refUtr,
+              bank: parsedSms?.bank,
+            },
+          }, { status: 200 })
+        }
+
+        matchedInvoice = candidate
+        console.log(`✅ [BANK SMS WEBHOOK] Matched under_review invoice #${matchedInvoice.invoice_number} by client-submitted UTR ${refUtr}`)
       }
     }
 
-    // If no invoice could be matched, log the event and return details
+    // Direct invoice ID matching (only if explicitly called by test or direct API)
+    if (!matchedInvoice && invoiceId) {
+      const { data } = await supabaseAdmin
+        .from('invoices')
+        .select('*, client:clients(*)')
+        .eq('id', invoiceId)
+        .eq('status', 'under_review')
+        .single()
+      if (data) matchedInvoice = data
+    }
+
+    // If no under_review invoice matched this UTR, do not match any invoice
     if (!matchedInvoice) {
-      console.warn('⚠️ [BANK SMS WEBHOOK] Received credit SMS but no matching unpaid invoice found:', {
+      console.warn('⚠️ [BANK SMS WEBHOOK] Received credit SMS but no under_review invoice matched this UTR:', {
         refUtr,
         amount,
-        invoiceNumber,
         parsedSms,
       })
       return NextResponse.json({
         success: false,
         matched: false,
-        message: 'Bank credit received and parsed, but no unpaid invoice matched the UTR or amount.',
+        message: refUtr
+          ? `Bank credit received with UTR ${refUtr}, but no invoice currently in "Under Review" matches this UTR.`
+          : 'Bank credit received, but no valid 12-digit UTR was extracted or found under review.',
         parsed: {
           isCredit: true,
           amount,

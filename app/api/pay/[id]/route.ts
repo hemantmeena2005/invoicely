@@ -22,6 +22,82 @@ export async function GET(
       return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
     }
 
+    // 1.5 Auto-expire under_review if > 5 minutes without matching bank SMS
+    let reviewStartedAt: string | null = null
+    if (invoice.status === 'under_review') {
+      let reviewStartTime: number | null = null
+
+      if (invoice.terms && invoice.terms.includes('[REVIEW_AT:')) {
+        const match = invoice.terms.match(/\[REVIEW_AT:([^\]]+)\]/)
+        if (match && match[1]) {
+          const parsed = new Date(match[1]).getTime()
+          if (!isNaN(parsed)) {
+            reviewStartTime = parsed
+            reviewStartedAt = match[1]
+          }
+        }
+      }
+
+      if (!reviewStartTime && Array.isArray(invoice.email_logs)) {
+        const reviewLog = [...invoice.email_logs].reverse().find((l: any) => l && l.status === 'under_review')
+        if (reviewLog && reviewLog.sentAt) {
+          const parsed = new Date(reviewLog.sentAt).getTime()
+          if (!isNaN(parsed)) {
+            reviewStartTime = parsed
+            reviewStartedAt = reviewLog.sentAt
+          }
+        }
+      }
+
+      if (!reviewStartTime && invoice.updated_at) {
+        const parsed = new Date(invoice.updated_at).getTime()
+        if (!isNaN(parsed)) {
+          reviewStartTime = parsed
+          reviewStartedAt = invoice.updated_at
+        }
+      }
+
+      // Check if 5 minutes (300,000 ms) have passed
+      if (reviewStartTime && Date.now() - reviewStartTime > 5 * 60 * 1000) {
+        const submittedUtr = invoice.terms?.includes('UTR:')
+          ? invoice.terms.split('UTR:')[1]?.split('|')[0]?.trim()
+          : 'UNKNOWN'
+
+        const cleanTerms = (invoice.terms || '')
+          .replace(/\[REVIEW_AT:[^\]]+\]/gi, '')
+          .replace(/\[REJECTED:[^\]]+\]/gi, '')
+          .replace(/\|?\s*UTR:[^\s|]+/gi, '')
+          .trim()
+
+        const updatedTermsWithReject = cleanTerms
+          ? `${cleanTerms} | [REJECTED:${submittedUtr}]`
+          : `[REJECTED:${submittedUtr}]`
+
+        const currentLogs = Array.isArray(invoice.email_logs) ? invoice.email_logs : []
+        const auditEntry = {
+          sentAt: new Date().toISOString(),
+          emailType: 'auto_timeout_5min_rejection',
+          status: 'rejected',
+          utr: submittedUtr,
+          reason: 'No matching bank SMS credit received within 5 minutes',
+        }
+
+        await supabaseAdmin
+          .from('invoices')
+          .update({
+            status: 'sent',
+            terms: updatedTermsWithReject,
+            updated_at: new Date().toISOString(),
+            email_logs: [...currentLogs, auditEntry],
+          })
+          .eq('id', invoice.id)
+
+        invoice.status = 'sent'
+        invoice.terms = updatedTermsWithReject
+        reviewStartedAt = null
+      }
+    }
+
     // 2. Fetch invoice creator's user profile (for UPI and branding)
     const { data: userProfile } = await supabaseAdmin
       .from('users')
@@ -35,6 +111,7 @@ export async function GET(
       id: invoice.id,
       invoiceNumber: invoice.invoice_number || 'INV-0000',
       status: invoice.status,
+      reviewStartedAt,
       issueDate: invoice.issue_date,
       dueDate: invoice.due_date,
       paidAt: invoice.paid_at,

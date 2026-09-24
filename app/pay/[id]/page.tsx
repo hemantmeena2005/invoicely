@@ -23,6 +23,7 @@ interface PublicInvoice {
   id: string
   invoiceNumber: string
   status: string
+  reviewStartedAt?: string | null
   issueDate: string
   dueDate: string
   paidAt?: string
@@ -93,6 +94,37 @@ export default function PublicInvoicePayPage() {
     }, 1000)
     return () => clearInterval(timer)
   }, [])
+
+  // 5-Minute Under-Review Countdown Timer
+  const [reviewTimeLeft, setReviewTimeLeft] = useState(300)
+
+  useEffect(() => {
+    if (invoice?.status !== 'under_review') return
+
+    const computeTimeRemaining = () => {
+      let startTime = invoice.reviewStartedAt ? new Date(invoice.reviewStartedAt).getTime() : null
+      if (!startTime && invoice.terms && invoice.terms.includes('[REVIEW_AT:')) {
+        const match = invoice.terms.match(/\[REVIEW_AT:([^\]]+)\]/)
+        if (match && match[1]) startTime = new Date(match[1]).getTime()
+      }
+      if (!startTime) return 300
+
+      const elapsedSec = Math.floor((Date.now() - startTime) / 1000)
+      return Math.max(0, 300 - elapsedSec)
+    }
+
+    setReviewTimeLeft(computeTimeRemaining())
+
+    const interval = setInterval(() => {
+      const remaining = computeTimeRemaining()
+      setReviewTimeLeft(remaining)
+      if (remaining <= 0) {
+        fetchPublicInvoice(true)
+      }
+    }, 1000)
+
+    return () => clearInterval(interval)
+  }, [invoice?.status, invoice?.reviewStartedAt, invoice?.terms])
 
   useEffect(() => {
     if (searchParams.get('success') === 'true') {
@@ -420,9 +452,19 @@ export default function PublicInvoicePayPage() {
                     </div>
                     <div className="flex justify-between items-center text-slate-400">
                       <span>Status:</span>
-                      <span className="text-amber-400 font-bold">Awaiting Payee Confirmation</span>
+                      <span className="text-amber-400 font-bold">Awaiting Bank / Payee Confirmation</span>
+                    </div>
+                    <div className="flex justify-between items-center text-slate-400 pt-1 border-t border-slate-900">
+                      <span>Timeout in:</span>
+                      <span className="text-amber-400 font-bold font-mono bg-amber-950/40 px-2 py-0.5 rounded border border-amber-500/20">
+                        {formatTimer(reviewTimeLeft)}
+                      </span>
                     </div>
                   </div>
+
+                  <p className="text-[11px] text-slate-500 max-w-xs mx-auto leading-relaxed">
+                    Auto-verifies upon bank credit. If not confirmed within 5 minutes, this request will automatically expire and reset to unpaid.
+                  </p>
 
                   <div className="p-3 rounded-xl bg-slate-950/50 border border-slate-800 text-[11px] text-slate-400 flex items-center justify-center gap-2">
                     <ArrowPathIcon className="h-4 w-4 text-indigo-400 animate-spin" />
