@@ -25,6 +25,7 @@ import {
 } from '@heroicons/react/24/outline'
 import InteractiveWalkthroughDemo from '@/components/InteractiveWalkthroughDemo'
 import ProductTourModal from '@/components/ProductTourModal'
+import PricingSection from '@/components/PricingSection'
 
 export default function HomePage() {
   const [isTourModalOpen, setIsTourModalOpen] = useState(false)
@@ -131,6 +132,9 @@ export default function HomePage() {
               </a>
               <a href="#comparison" className="hover:text-white transition-colors">
                 0% Fee Comparison
+              </a>
+              <a href="#pricing" className="hover:text-white transition-colors text-white font-bold">
+                Pricing
               </a>
               <a href="#reviews" className="hover:text-white transition-colors">
                 User Reviews
@@ -473,6 +477,13 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* Pricing Section */}
+      <section id="pricing" className="relative z-10 py-24 bg-slate-900/60 border-t border-slate-800/80">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <PricingSection />
+        </div>
+      </section>
+
       {/* FAQ Accordion Section */}
       <section id="faq" className="relative z-10 py-20 bg-slate-950 border-t border-slate-800/80">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 space-y-10">
@@ -567,6 +578,7 @@ export default function HomePage() {
           <div className="flex items-center gap-6 text-xs text-slate-400">
             <a href="#walkthrough" className="hover:text-white transition-colors">Interactive Tour</a>
             <a href="#comparison" className="hover:text-white transition-colors">0% Comparison</a>
+            <Link href="/pricing" className="hover:text-white transition-colors text-primary-400">Pricing</Link>
             <a href="#reviews" className="hover:text-white transition-colors">Reviews</a>
             <a href="#faq" className="hover:text-white transition-colors">FAQ</a>
             <Link href="/auth/signin" className="hover:text-white transition-colors">Sign In</Link>

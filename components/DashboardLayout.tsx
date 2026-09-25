@@ -26,6 +26,7 @@ const navigation = [
   { name: 'Analytics', href: '/analytics', icon: ChartBarIcon },
   { name: 'History', href: '/history', icon: ClockIcon },
   { name: 'Settings & UPI', href: '/settings', icon: Cog6ToothIcon },
+  { name: 'Pricing & Plans', href: '/pricing', icon: SparklesIcon },
 ]
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -332,7 +333,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5">
+            <Link
+              href="/pricing"
+              className="px-2.5 py-1.5 rounded-xl border border-primary-200 bg-primary-50/80 hover:bg-primary-100 text-primary-700 text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
+              title="View SaaS subscription plans"
+            >
+              <SparklesIcon className="h-3.5 w-3.5 text-primary-600" />
+              <span className="hidden sm:inline">Upgrade</span>
+            </Link>
+
             <button
               type="button"
               onClick={() => setTourOpen(true)}
@@ -340,7 +350,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               title="Where to create what? Start product tour"
             >
               <span>🧭</span>
-              <span className="hidden sm:inline">Product Tour</span>
+              <span className="hidden sm:inline">Tour</span>
             </button>
 
             <Link
